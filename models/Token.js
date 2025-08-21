@@ -1,29 +1,30 @@
-// models/Token.js
+// models/Token.js (Simple, working version)
 import mongoose from 'mongoose'
 
 const TokenSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
-    required: true,
-    ref: 'User'
+    ref: 'User',
+    required: true
   },
   token: {
     type: String,
-    required: true
+    required: true,
+    unique: true
   },
   type: {
     type: String,
-    required: true,
-    enum: ['email_verification', 'password_reset']
+    enum: ['email_verification', 'password_reset'],
+    required: true
   },
   expiresAt: {
     type: Date,
-    required: true,
-    default: Date.now,
-    expires: 3600 // 1 hour
+    required: true
   }
 }, {
   timestamps: true
 })
 
-export default mongoose.models.Token || mongoose.model('Token', TokenSchema)
+// Make sure to use this exact export pattern
+const Token = mongoose.models.Token || mongoose.model('Token', TokenSchema)
+export default Token

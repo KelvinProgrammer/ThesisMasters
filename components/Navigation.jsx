@@ -1,10 +1,13 @@
+// components/Navigation.jsx 
 'use client'
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 
 export default function Navigation({ currentPage = 'home' }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const pathname = usePathname()
 
   const navItems = [
     { name: 'Home', href: '/', key: 'home' },
@@ -13,6 +16,13 @@ export default function Navigation({ currentPage = 'home' }) {
     { name: 'About', href: '/about', key: 'about' },
     { name: 'Contact', href: '/contact', key: 'contact' },
   ]
+
+  const getCurrentPage = () => {
+    if (pathname === '/') return 'home'
+    return pathname.slice(1) // Remove the leading slash
+  }
+
+  const current = getCurrentPage()
 
   return (
     <nav className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 bg-gray-50">
@@ -37,7 +47,7 @@ export default function Navigation({ currentPage = 'home' }) {
               key={item.key}
               href={item.href}
               className={`font-medium transition-colors ${
-                currentPage === item.key
+                current === item.key || currentPage === item.key
                   ? 'text-gray-900'
                   : 'text-gray-700 hover:text-gray-900'
               }`}
@@ -55,13 +65,13 @@ export default function Navigation({ currentPage = 'home' }) {
             </svg>
           </button>
           
-          <button className="text-gray-700 hover:text-gray-900 font-medium">
+          <Link href="/auth/login" className="text-gray-700 hover:text-gray-900 font-medium">
             Login
-          </button>
+          </Link>
           
-          <button className="hidden md:block bg-black text-white px-6 py-2 rounded-lg font-semibold hover:bg-gray-800 transition-colors">
+          <Link href="/auth/register" className="hidden md:block bg-black text-white px-6 py-2 rounded-lg font-semibold hover:bg-gray-800 transition-colors">
             Register
-          </button>
+          </Link>
           
           {/* Mobile menu button */}
           <button
@@ -88,7 +98,7 @@ export default function Navigation({ currentPage = 'home' }) {
                 key={item.key}
                 href={item.href}
                 className={`block py-2 font-medium transition-colors ${
-                  currentPage === item.key
+                  current === item.key || currentPage === item.key
                     ? 'text-gray-900'
                     : 'text-gray-700 hover:text-gray-900'
                 }`}
@@ -97,6 +107,13 @@ export default function Navigation({ currentPage = 'home' }) {
                 {item.name}
               </Link>
             ))}
+            <Link
+              href="/auth/register"
+              className="block w-full bg-black text-white py-3 px-6 rounded-lg font-semibold hover:bg-gray-800 transition-colors text-center mt-4"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              Register
+            </Link>
           </div>
         </div>
       )}

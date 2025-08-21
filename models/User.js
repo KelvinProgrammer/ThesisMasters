@@ -1,94 +1,59 @@
-// models/User.js
+// models/User.js (Simple, working version)
 import mongoose from 'mongoose'
-import bcrypt from 'bcryptjs'
 
 const UserSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: [true, 'Please provide a name'],
-    maxlength: [60, 'Name cannot be more than 60 characters']
+    required: [true, 'Name is required'],
+    trim: true,
+    minlength: [2, 'Name must be at least 2 characters long'],
+    maxlength: [50, 'Name must be less than 50 characters long']
   },
   email: {
     type: String,
-    required: [true, 'Please provide an email'],
+    required: [true, 'Email is required'],
     unique: true,
-    match: [
-      /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
-      'Please provide a valid email'
-    ]
+    lowercase: true,
+    trim: true,
+    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
   },
   password: {
     type: String,
     required: function() {
-      return !this.googleId
+      return !this.provider || this.provider === 'credentials'
     },
-    minlength: [6, 'Password must be at least 6 characters'],
+    minlength: [6, 'Password must be at least 6 characters long'],
     select: false
   },
-  googleId: {
+  image: {
     type: String,
-    sparse: true
+    default: null
   },
-  avatar: {
+  role: {
     type: String,
-    default: ''
+    enum: ['student', 'supervisor', 'admin'],
+    default: 'student'
   },
-  isEmailVerified: {
+  emailVerified: {
     type: Boolean,
     default: false
   },
-  emailVerificationToken: String,
-  emailVerificationExpires: Date,
-  passwordResetToken: String,
-  passwordResetExpires: Date,
-  role: {
+  provider: {
     type: String,
-    enum: ['student', 'admin'],
-    default: 'student'
-  },
-  university: String,
-  degree: String,
-  researchField: String,
-  accountType: {
-    type: String,
-    enum: ['masters', 'phd', 'university'],
-    default: 'masters'
+    enum: ['credentials', 'google'],
+    default: 'credentials'
   }
 }, {
   timestamps: true
 })
 
-// Hash password before saving
-UserSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next()
-  
-  this.password = await bcrypt.hash(this.password, 12)
-  next()
-})
-
-// Compare password method
-UserSchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password)
+// Instance methods
+UserSchema.methods.toSafeObject = function() {
+  const userObject = this.toObject()
+  delete userObject.password
+  return userObject
 }
 
-// Generate email verification token
-UserSchema.methods.createEmailVerificationToken = function() {
-  const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-  
-  this.emailVerificationToken = token
-  this.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000 // 24 hours
-  
-  return token
-}
-
-// Generate password reset token
-UserSchema.methods.createPasswordResetToken = function() {
-  const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-  
-  this.passwordResetToken = token
-  this.passwordResetExpires = Date.now() + 10 * 60 * 1000 // 10 minutes
-  
-  return token
-}
-
-export default mongoose.models.User || mongoose.model('User', UserSchema)
+// Make sure to use this exact export pattern
+const User = mongoose.models.User || mongoose.model('User', UserSchema)
+export default User
