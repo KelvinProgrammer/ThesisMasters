@@ -1,4 +1,4 @@
-// app/api/auth/register/route.js (Fixed imports)
+// app/api/auth/register/route.js (FIXED - Enable Email Verification)
 import { NextResponse } from 'next/server'
 import { connectToDatabase } from '../../../../lib/mongodb.js'
 import { hashPassword } from '../../../../lib/auth.js'
@@ -37,7 +37,6 @@ export async function POST(request) {
 
     // Check if user already exists
     console.log('👤 Checking if user exists...')
-    console.log('User model:', User) // Debug log
     const existingUser = await User.findOne({ email })
     if (existingUser) {
       console.log('❌ User already exists')
@@ -50,13 +49,13 @@ export async function POST(request) {
     const hashedPassword = await hashPassword(password)
     console.log('✅ Password hashed')
 
-    // Create user
+    // Create user (emailVerified: false)
     console.log('👤 Creating user...')
     const user = await User.create({
       name,
       email,
       password: hashedPassword,
-      emailVerified: false
+      emailVerified: false // IMPORTANT: User must verify email
     })
     console.log('✅ User created:', { id: user._id, email: user.email })
 
@@ -74,20 +73,24 @@ export async function POST(request) {
     })
     console.log('✅ Token saved')
 
-    // Send verification email (skip for now to test basic flow)
-    console.log('📧 Skipping email for now...')
-    /*
+    // Send verification email
+    console.log('📧 Sending verification email...')
     try {
       await sendVerificationEmail(email, verificationToken, name)
       console.log('✅ Verification email sent successfully')
     } catch (emailError) {
       console.error('❌ Failed to send email:', emailError)
+      // Delete the user if email fails to send
+      await User.findByIdAndDelete(user._id)
+      await Token.deleteMany({ userId: user._id })
+      return NextResponse.json({ 
+        message: 'Failed to send verification email. Please try again.' 
+      }, { status: 500 })
     }
-    */
 
     console.log('🎉 Registration completed successfully')
     return NextResponse.json({
-      message: 'User created successfully. Email verification temporarily disabled.',
+      message: 'Registration successful! Please check your email to verify your account.',
       user: {
         id: user._id,
         name: user.name,

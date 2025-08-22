@@ -1,4 +1,4 @@
-// app/login/page.jsx (Add debug logging)
+// app/auth/login/page.jsx (Updated with better error handling)
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -67,6 +67,9 @@ export default function LoginPage() {
     signIn('google', { callbackUrl: '/dashboard' })
   }
 
+  // Check if error is about email verification
+  const isEmailVerificationError = error.toLowerCase().includes('verify your email')
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -90,12 +93,27 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <div className="flex items-center">
-                <svg className="w-5 h-5 text-red-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd"/>
+            <div className={`mb-6 p-4 ${isEmailVerificationError ? 'bg-orange-50 border-orange-200' : 'bg-red-50 border-red-200'} border rounded-lg`}>
+              <div className="flex items-start">
+                <svg className={`w-5 h-5 ${isEmailVerificationError ? 'text-orange-500' : 'text-red-500'} mr-2 mt-0.5 flex-shrink-0`} fill="currentColor" viewBox="0 0 20 20">
+                  {isEmailVerificationError ? (
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd"/>
+                  ) : (
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd"/>
+                  )}
                 </svg>
-                <span className="text-red-800 text-sm">{error}</span>
+                <div className="flex-1">
+                  <span className={`${isEmailVerificationError ? 'text-orange-800' : 'text-red-800'} text-sm`}>{error}</span>
+                  {isEmailVerificationError && (
+                    <p className="text-orange-700 text-xs mt-1">
+                      Check your email inbox for the verification link, or{' '}
+                      <Link href="/auth/register" className="underline hover:no-underline">
+                        register again
+                      </Link>
+                      {' '}if you need a new verification email.
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -151,6 +169,12 @@ export default function LoginPage() {
               </div>
             </div>
 
+            <div className="flex items-center justify-between">
+              <Link href="/auth/forgot-password" className="text-sm text-blue-600 hover:text-blue-500">
+                Forgot your password?
+              </Link>
+            </div>
+
             <button
               type="submit"
               disabled={loading}
@@ -196,18 +220,9 @@ export default function LoginPage() {
 
           <p className="mt-8 text-center text-sm text-gray-600">
             Don't have an account?{' '}
-            <Link href="/register" className="text-blue-600 hover:text-blue-500 font-medium">
+            <Link href="/auth/register" className="text-blue-600 hover:text-blue-500 font-medium">
               Sign up for free
             </Link>
-          </p>
-        </div>
-
-        {/* Test Credentials */}
-        <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-          <h3 className="font-medium text-blue-900 mb-2">Test Credentials:</h3>
-          <p className="text-sm text-blue-800">
-            Email: test@example.com<br/>
-            Password: password123
           </p>
         </div>
       </div>

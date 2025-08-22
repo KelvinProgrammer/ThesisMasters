@@ -1,4 +1,4 @@
-// app/api/auth/[...nextauth]/route.js (FIXED)
+// app/api/auth/[...nextauth]/route.js (FIXED - Enable Email Verification Check)
 import NextAuth from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
 import CredentialsProvider from 'next-auth/providers/credentials'
@@ -36,11 +36,11 @@ const authOptions = {
             throw new Error('No user found with this email')
           }
 
-          // For now, skip email verification check to test login
-          // if (!user.emailVerified) {
-          //   console.log('❌ Email not verified')
-          //   throw new Error('Please verify your email before logging in')
-          // }
+          // CHECK EMAIL VERIFICATION - ENABLED
+          if (!user.emailVerified) {
+            console.log('❌ Email not verified for:', credentials.email)
+            throw new Error('Please verify your email before logging in. Check your inbox for verification link.')
+          }
 
           console.log('🔍 Verifying password...')
           const isValid = await verifyPassword(credentials.password, user.password)
@@ -81,6 +81,12 @@ const authOptions = {
             name: user.name,
             email: user.email,
             image: user.image,
+            emailVerified: true, // Google accounts are automatically verified
+            provider: 'google'
+          })
+        } else {
+          // Update existing user to mark as verified if using Google
+          await User.findByIdAndUpdate(existingUser._id, {
             emailVerified: true,
             provider: 'google'
           })
@@ -104,8 +110,9 @@ const authOptions = {
     }
   },
   pages: {
-    signIn: '/login',
-    signUp: '/register'
+    signIn: '/auth/login',
+    // Add custom error page for better UX
+    error: '/auth/error'
   }
 }
 
