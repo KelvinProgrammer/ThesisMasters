@@ -19,7 +19,7 @@ export default function LoginPage() {
   useEffect(() => {
     getSession().then((session) => {
       if (session) {
-        router.push('/dashboard')
+        router.push('/dashboard/overview')
       }
     })
   }, [router])
@@ -64,7 +64,7 @@ export default function LoginPage() {
   }
 
   const handleGoogleSignIn = () => {
-    signIn('google', { callbackUrl: '/dashboard' })
+    signIn('google', { callbackUrl: '/dashboard/overview' })
   }
 
   // Check if error is about email verification
