@@ -53,7 +53,7 @@ export default function LoginPage() {
         setError(result.error)
       } else {
         console.log('✅ Login successful, redirecting...')
-        router.push('/dashboard')
+        router.push('/dashboard/overview')
       }
     } catch (error) {
       console.error('💥 Login exception:', error)
