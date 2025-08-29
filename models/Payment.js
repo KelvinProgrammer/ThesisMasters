@@ -1,101 +1,214 @@
-// models/Payment.js
+// models/Chapter.js - Updated with Pricing Fields
 import mongoose from 'mongoose'
 
-const PaymentSchema = new mongoose.Schema({
+const ChapterSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: [true, 'Chapter title is required'],
+    trim: true,
+    maxlength: [200, 'Title must be less than 200 characters']
+  },
+  content: {
+    type: String,
+    default: ''
+  },
+  summary: {
+    type: String,
+    maxlength: [500, 'Summary must be less than 500 characters']
+  },
+  status: {
+    type: String,
+    enum: ['draft', 'in_progress', 'completed', 'revision', 'approved'],
+    default: 'draft'
+  },
+  chapterNumber: {
+    type: Number,
+    required: true,
+    min: 1
+  },
+  wordCount: {
+    type: Number,
+    default: 0
+  },
+  targetWordCount: {
+    type: Number,
+    default: 2000
+  },
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
-  chapterId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Chapter'
+  deadline: {
+    type: Date
   },
-  amount: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-  currency: {
+  tags: [{
     type: String,
-    default: 'USD',
-    enum: ['USD', 'EUR', 'GBP', 'KES']
-  },
-  status: {
+    trim: true
+  }],
+  notes: {
     type: String,
-    enum: ['pending', 'processing', 'completed', 'failed', 'refunded'],
-    default: 'pending'
+    default: ''
   },
-  paymentMethod: {
+  
+  // Pricing Information
+  level: {
     type: String,
-    enum: ['credit_card', 'paypal', 'bank_transfer', 'mpesa'],
-    required: true
+    enum: ['masters', 'phd'],
+    default: 'masters'
   },
-  transactionId: {
+  workType: {
     type: String,
-    unique: true,
-    sparse: true
+    enum: ['coursework', 'revision', 'statistics'],
+    default: 'coursework'
   },
-  stripePaymentIntentId: {
+  urgency: {
     type: String,
-    sparse: true
+    enum: ['normal', 'urgent', 'very_urgent'],
+    default: 'normal'
   },
-  description: {
-    type: String,
-    required: true
-  },
-  type: {
-    type: String,
-    enum: ['chapter_payment', 'subscription', 'one_time'],
-    default: 'chapter_payment'
-  },
-  metadata: {
-    type: mongoose.Schema.Types.Mixed,
-    default: {}
-  },
-  refundAmount: {
+  estimatedPages: {
     type: Number,
     default: 0
   },
-  refundReason: {
-    type: String
+  estimatedCost: {
+    type: Number,
+    default: 0
   },
-  failureReason: {
-    type: String
+  pricing: {
+    currency: {
+      type: String,
+      default: 'KSH'
+    },
+    pricePerPage: {
+      type: Number,
+      default: 400
+    },
+    basePrice: {
+      type: Number,
+      default: 0
+    },
+    urgencyMultiplier: {
+      type: Number,
+      default: 1
+    },
+    levelMultiplier: {
+      type: Number,
+      default: 1
+    },
+    workTypeMultiplier: {
+      type: Number,
+      default: 1
+    },
+    totalPrice: {
+      type: Number,
+      default: 0
+    }
+  },
+  
+  feedback: [{
+    reviewer: {
+      type: String,
+      required: true
+    },
+    comment: {
+      type: String,
+      required: true
+    },
+    rating: {
+      type: Number,
+      min: 1,
+      max: 5
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  revisions: [{
+    version: {
+      type: Number,
+      required: true
+    },
+    content: {
+      type: String,
+      required: true
+    },
+    changes: {
+      type: String
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  isPaid: {
+    type: Boolean,
+    default: false
+  },
+  paymentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Payment'
   }
 }, {
   timestamps: true
 })
 
 // Index for efficient queries
-PaymentSchema.index({ userId: 1, status: 1 })
-PaymentSchema.index({ transactionId: 1 })
-PaymentSchema.index({ createdAt: -1 })
+ChapterSchema.index({ userId: 1, chapterNumber: 1 })
+ChapterSchema.index({ status: 1 })
+ChapterSchema.index({ level: 1 })
+ChapterSchema.index({ workType: 1 })
 
 // Instance methods
-PaymentSchema.methods.markAsCompleted = function(transactionId) {
-  this.status = 'completed'
-  this.transactionId = transactionId
-  return this.save()
+ChapterSchema.methods.updateWordCount = function() {
+  this.wordCount = this.content.split(/\s+/).filter(word => word.length > 0).length
+  return this.wordCount
 }
 
-PaymentSchema.methods.markAsFailed = function(reason) {
-  this.status = 'failed'
-  this.failureReason = reason
-  return this.save()
+ChapterSchema.methods.getProgress = function() {
+  return Math.min((this.wordCount / this.targetWordCount) * 100, 100)
+}
+
+ChapterSchema.methods.calculatePricing = function() {
+  const pages = Math.ceil(this.targetWordCount / 250)
+  const baseRate = 400 // KSH per page
+  
+  const urgencyMultipliers = { normal: 1, urgent: 1.5, very_urgent: 2 }
+  const levelMultipliers = { masters: 1, phd: 1.3 }
+  const workTypeMultipliers = { coursework: 1, revision: 0.8, statistics: 1.4 }
+  
+  const basePrice = pages * baseRate
+  const urgencyMultiplier = urgencyMultipliers[this.urgency] || 1
+  const levelMultiplier = levelMultipliers[this.level] || 1
+  const workTypeMultiplier = workTypeMultipliers[this.workType] || 1
+  
+  const totalPrice = Math.round(basePrice * urgencyMultiplier * levelMultiplier * workTypeMultiplier)
+  
+  this.pricing = {
+    currency: 'KSH',
+    pricePerPage: baseRate,
+    basePrice,
+    urgencyMultiplier,
+    levelMultiplier,
+    workTypeMultiplier,
+    totalPrice
+  }
+  
+  this.estimatedPages = pages
+  this.estimatedCost = totalPrice
+  
+  return this.pricing
 }
 
 // Static methods
-PaymentSchema.statics.getPaymentsByUser = function(userId) {
-  return this.find({ userId }).sort({ createdAt: -1 }).populate('chapterId', 'title chapterNumber')
+ChapterSchema.statics.getChaptersByUser = function(userId) {
+  return this.find({ userId }).sort({ chapterNumber: 1 })
 }
 
-PaymentSchema.statics.getTotalRevenue = function() {
-  return this.aggregate([
-    { $match: { status: 'completed' } },
-    { $group: { _id: null, total: { $sum: '$amount' } } }
-  ])
+ChapterSchema.statics.getChaptersByStatus = function(userId, status) {
+  return this.find({ userId, status }).sort({ updatedAt: -1 })
 }
 
-const Payment = mongoose.models.Payment || mongoose.model('Payment', PaymentSchema)
-export default Payment
+const Chapter = mongoose.models.Chapter || mongoose.model('Chapter', ChapterSchema)
+export default Chapter

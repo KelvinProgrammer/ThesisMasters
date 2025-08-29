@@ -1,13 +1,30 @@
-// app/api/chapters/[id]/route.js
+// app/api/chapters/[id]/route.js - FIXED VERSION
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth/next'
+import { authOptions } from '@/app/api/auth/[...nextauth]/route' // Import your authOptions
 import { connectToDatabase } from '@/lib/mongodb'
 import Chapter from '@/models/Chapter'
+import User from '@/models/User'
 import mongoose from 'mongoose'
+
+// Helper function to get userId from session
+async function getUserIdFromSession(session) {
+  let userId = session.user.id || session.user._id
+  
+  // If still no userId, try to find user by email
+  if (!userId && session.user.email) {
+    const user = await User.findOne({ email: session.user.email })
+    if (user) {
+      userId = user._id
+    }
+  }
+  
+  return userId
+}
 
 export async function GET(request, { params }) {
   try {
-    const session = await getServerSession()
+    const session = await getServerSession(authOptions)
     
     if (!session) {
       return NextResponse.json({ message: 'Not authenticated' }, { status: 401 })
@@ -21,9 +38,14 @@ export async function GET(request, { params }) {
 
     await connectToDatabase()
 
+    const userId = await getUserIdFromSession(session)
+    if (!userId) {
+      return NextResponse.json({ message: 'User identification failed' }, { status: 400 })
+    }
+
     const chapter = await Chapter.findOne({ 
       _id: id, 
-      userId: session.user.id 
+      userId 
     }).populate('paymentId', 'status amount currency')
 
     if (!chapter) {
@@ -39,7 +61,7 @@ export async function GET(request, { params }) {
 
 export async function PUT(request, { params }) {
   try {
-    const session = await getServerSession()
+    const session = await getServerSession(authOptions)
     
     if (!session) {
       return NextResponse.json({ message: 'Not authenticated' }, { status: 401 })
@@ -54,9 +76,14 @@ export async function PUT(request, { params }) {
 
     await connectToDatabase()
 
+    const userId = await getUserIdFromSession(session)
+    if (!userId) {
+      return NextResponse.json({ message: 'User identification failed' }, { status: 400 })
+    }
+
     const chapter = await Chapter.findOne({ 
       _id: id, 
-      userId: session.user.id 
+      userId 
     })
 
     if (!chapter) {
@@ -113,7 +140,7 @@ export async function PUT(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
-    const session = await getServerSession()
+    const session = await getServerSession(authOptions)
     
     if (!session) {
       return NextResponse.json({ message: 'Not authenticated' }, { status: 401 })
@@ -127,9 +154,14 @@ export async function DELETE(request, { params }) {
 
     await connectToDatabase()
 
+    const userId = await getUserIdFromSession(session)
+    if (!userId) {
+      return NextResponse.json({ message: 'User identification failed' }, { status: 400 })
+    }
+
     const chapter = await Chapter.findOneAndDelete({ 
       _id: id, 
-      userId: session.user.id 
+      userId 
     })
 
     if (!chapter) {

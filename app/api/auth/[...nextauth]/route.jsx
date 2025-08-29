@@ -1,20 +1,13 @@
-// app/api/auth/[...nextauth]/route.js (FIXED - Enable Email Verification Check)
+// app/api/auth/[...nextauth]/route.js
 import NextAuth from 'next-auth'
-import GoogleProvider from 'next-auth/providers/google'
 import CredentialsProvider from 'next-auth/providers/credentials'
-import { connectToDatabase } from '../../../../lib/mongodb.js'
-import { verifyPassword } from '../../../../lib/auth.js'
-import User from '../../../../models/User.js'
+import GoogleProvider from 'next-auth/providers/google'
+import { connectToDatabase } from '@/lib/mongodb'
+import User from '@/models/User'
+import { verifyPassword } from '@/lib/auth'
 
-const authOptions = {
-  session: {
-    strategy: 'jwt',
-  },
+export const authOptions = {
   providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    }),
     CredentialsProvider({
       name: 'credentials',
       credentials: {
@@ -22,98 +15,115 @@ const authOptions = {
         password: { label: 'Password', type: 'password' }
       },
       async authorize(credentials) {
-        console.log('🔐 Login attempt for:', credentials.email)
+        if (!credentials?.email || !credentials?.password) {
+          throw new Error('Please enter your email and password')
+        }
+
+        await connectToDatabase()
+
+        const user = await User.findOne({ email: credentials.email }).select('+password')
         
-        try {
-          await connectToDatabase()
-          console.log('✅ Database connected for login')
+        if (!user) {
+          throw new Error('No user found with this email')
+        }
 
-          const user = await User.findOne({ email: credentials.email }).select('+password')
-          console.log('👤 User found:', !!user)
-          
-          if (!user) {
-            console.log('❌ No user found with email:', credentials.email)
-            throw new Error('No user found with this email')
-          }
+        if (!user.emailVerified) {
+          throw new Error('Please verify your email before signing in')
+        }
 
-          // CHECK EMAIL VERIFICATION - ENABLED
-          if (!user.emailVerified) {
-            console.log('❌ Email not verified for:', credentials.email)
-            throw new Error('Please verify your email before logging in. Check your inbox for verification link.')
-          }
+        const isValidPassword = await verifyPassword(credentials.password, user.password)
+        
+        if (!isValidPassword) {
+          throw new Error('Invalid password')
+        }
 
-          console.log('🔍 Verifying password...')
-          const isValid = await verifyPassword(credentials.password, user.password)
-          console.log('🔑 Password valid:', isValid)
-          
-          if (!isValid) {
-            console.log('❌ Invalid password')
-            throw new Error('Invalid password')
-          }
-
-          console.log('✅ Login successful for:', user.email)
-          return {
-            id: user._id.toString(),
-            email: user.email,
-            name: user.name,
-            image: user.image,
-            role: user.role || 'student'
-          }
-        } catch (error) {
-          console.error('💥 Login error:', error.message)
-          throw error
+        // Return user object that will be stored in JWT and session
+        return {
+          id: user._id.toString(), // Convert ObjectId to string
+          email: user.email,
+          name: user.name,
+          image: user.image,
+          role: user.role,
+          emailVerified: user.emailVerified
         }
       }
+    }),
+    
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     })
   ],
+
   callbacks: {
-    async signIn({ user, account, profile }) {
-      console.log('📝 SignIn callback triggered')
-      if (account.provider === 'google') {
-        console.log('🔍 Google OAuth login')
+    async jwt({ token, user, account }) {
+      // Initial sign in
+      if (user) {
+        token.id = user.id
+        token.role = user.role
+        token.emailVerified = user.emailVerified
+      }
+
+      // If signing in with Google, find or create user
+      if (account?.provider === 'google' && user) {
         await connectToDatabase()
         
-        const existingUser = await User.findOne({ email: user.email })
+        let dbUser = await User.findOne({ email: user.email })
         
-        if (!existingUser) {
-          console.log('👤 Creating new Google user')
-          await User.create({
+        if (!dbUser) {
+          dbUser = await User.create({
             name: user.name,
             email: user.email,
             image: user.image,
-            emailVerified: true, // Google accounts are automatically verified
-            provider: 'google'
-          })
-        } else {
-          // Update existing user to mark as verified if using Google
-          await User.findByIdAndUpdate(existingUser._id, {
-            emailVerified: true,
-            provider: 'google'
+            provider: 'google',
+            emailVerified: true
           })
         }
+        
+        token.id = dbUser._id.toString()
+        token.role = dbUser.role
+        token.emailVerified = dbUser.emailVerified
       }
-      return true
-    },
-    async jwt({ token, user }) {
-      if (user) {
-        token.role = user.role || 'student'
-        token.id = user.id
-      }
+
       return token
     },
+
     async session({ session, token }) {
+      // Send properties to the client
       if (token) {
         session.user.id = token.id
         session.user.role = token.role
+        session.user.emailVerified = token.emailVerified
       }
+      
       return session
+    },
+
+    async signIn({ user, account, profile }) {
+      if (account?.provider === 'google') {
+        return true // Allow Google sign in
+      }
+      
+      // For credentials, user must be verified (handled in authorize)
+      return true
     }
   },
+
   pages: {
     signIn: '/auth/login',
-    // Add custom error page for better UX
     error: '/auth/error'
-  }
+  },
+
+  session: {
+    strategy: 'jwt',
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+  },
+
+  jwt: {
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+  },
+
+  secret: process.env.NEXTAUTH_SECRET
 }
 
 const handler = NextAuth(authOptions)
