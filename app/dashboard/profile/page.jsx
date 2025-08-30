@@ -1,4 +1,4 @@
-// app/dashboard/profile/page.jsx
+// app/dashboard/profile/page.jsx - Updated with better UX and validation
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -14,19 +14,27 @@ export default function Profile() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [activeTab, setActiveTab] = useState('profile')
+  const [profileLoading, setProfileLoading] = useState(true)
 
   const [profileData, setProfileData] = useState({
     name: '',
     email: '',
     university: '',
     department: '',
-    researchField: ''
+    researchField: '',
+    phone: '',
+    bio: ''
   })
 
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
     confirmPassword: ''
+  })
+
+  const [passwordStrength, setPasswordStrength] = useState({
+    score: 0,
+    feedback: ''
   })
 
   useEffect(() => {
@@ -40,9 +48,41 @@ export default function Profile() {
     fetchProfile()
   }, [status, router])
 
+  // Check password strength
+  const checkPasswordStrength = (password) => {
+    let score = 0
+    let feedback = []
+
+    if (password.length >= 6) score++
+    if (password.length >= 8) score++
+    if (/[a-z]/.test(password)) score++
+    if (/[A-Z]/.test(password)) score++
+    if (/\d/.test(password)) score++
+    if (/[^A-Za-z0-9]/.test(password)) score++
+
+    if (password.length < 6) feedback.push('At least 6 characters')
+    if (!/\d/.test(password)) feedback.push('At least one number')
+    if (!/[a-zA-Z]/.test(password)) feedback.push('At least one letter')
+    
+    const strength = score < 3 ? 'weak' : score < 5 ? 'medium' : 'strong'
+    
+    setPasswordStrength({
+      score: score,
+      strength: strength,
+      feedback: feedback.join(', ')
+    })
+  }
+
   const fetchProfile = async () => {
     try {
-      const response = await fetch('/api/user/profile')
+      setProfileLoading(true)
+      const response = await fetch('/api/user/profile', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+      
       const data = await response.json()
 
       if (!response.ok) {
@@ -54,10 +94,15 @@ export default function Profile() {
         email: data.user.email || '',
         university: data.user.university || '',
         department: data.user.department || '',
-        researchField: data.user.researchField || ''
+        researchField: data.user.researchField || '',
+        phone: data.user.phone || '',
+        bio: data.user.bio || ''
       })
     } catch (err) {
+      console.error('Profile fetch error:', err)
       setError(err.message)
+    } finally {
+      setProfileLoading(false)
     }
   }
 
@@ -75,6 +120,10 @@ export default function Profile() {
       ...prev,
       [name]: value
     }))
+
+    if (name === 'newPassword') {
+      checkPasswordStrength(value)
+    }
   }
 
   const handleProfileSubmit = async (e) => {
@@ -112,6 +161,7 @@ export default function Profile() {
       }
 
     } catch (err) {
+      console.error('Profile update error:', err)
       setError(err.message)
     } finally {
       setLoading(false)
@@ -124,6 +174,7 @@ export default function Profile() {
     setError('')
     setSuccess('')
 
+    // Client-side validation
     if (passwordData.newPassword !== passwordData.confirmPassword) {
       setError('New passwords do not match')
       setLoading(false)
@@ -132,6 +183,12 @@ export default function Profile() {
 
     if (passwordData.newPassword.length < 6) {
       setError('Password must be at least 6 characters long')
+      setLoading(false)
+      return
+    }
+
+    if (passwordData.currentPassword === passwordData.newPassword) {
+      setError('New password must be different from current password')
       setLoading(false)
       return
     }
@@ -160,12 +217,45 @@ export default function Profile() {
         newPassword: '',
         confirmPassword: ''
       })
+      setPasswordStrength({ score: 0, feedback: '' })
 
     } catch (err) {
+      console.error('Password change error:', err)
       setError(err.message)
     } finally {
       setLoading(false)
     }
+  }
+
+  const getPasswordStrengthColor = () => {
+    if (passwordStrength.strength === 'weak') return 'bg-red-500'
+    if (passwordStrength.strength === 'medium') return 'bg-yellow-500'
+    return 'bg-green-500'
+  }
+
+  const getPasswordStrengthWidth = () => {
+    return `${(passwordStrength.score / 6) * 100}%`
+  }
+
+  if (profileLoading) {
+    return (
+      <DashboardLayout>
+        <div className="p-6 max-w-4xl mx-auto">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-300 rounded w-1/3 mb-4"></div>
+            <div className="h-4 bg-gray-300 rounded w-2/3 mb-8"></div>
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="h-6 bg-gray-300 rounded w-1/4 mb-6"></div>
+              <div className="space-y-4">
+                <div className="h-10 bg-gray-300 rounded"></div>
+                <div className="h-10 bg-gray-300 rounded"></div>
+                <div className="h-10 bg-gray-300 rounded"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </DashboardLayout>
+    )
   }
 
   return (
@@ -200,7 +290,7 @@ export default function Profile() {
           <nav className="-mb-px flex space-x-8">
             <button
               onClick={() => setActiveTab('profile')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'profile'
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -210,7 +300,7 @@ export default function Profile() {
             </button>
             <button
               onClick={() => setActiveTab('security')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'security'
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -234,12 +324,12 @@ export default function Profile() {
                     <img
                       src={session.user.image}
                       alt={session.user.name}
-                      className="w-16 h-16 rounded-full object-cover"
+                      className="w-16 h-16 rounded-full object-cover border-2 border-gray-200"
                     />
                   ) : (
-                    <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center">
+                    <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center border-2 border-gray-200">
                       <span className="text-white text-xl font-medium">
-                        {session?.user?.name?.charAt(0).toUpperCase()}
+                        {profileData.name?.charAt(0).toUpperCase() || 'U'}
                       </span>
                     </div>
                   )}
@@ -247,7 +337,7 @@ export default function Profile() {
                 <div>
                   <button
                     type="button"
-                    className="bg-white border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    className="bg-white border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     Change Photo
                   </button>
@@ -270,7 +360,8 @@ export default function Profile() {
                     value={profileData.name}
                     onChange={handleProfileChange}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                    maxLength={50}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition-colors"
                   />
                 </div>
 
@@ -292,6 +383,21 @@ export default function Profile() {
                 </div>
               </div>
 
+              <div>
+                <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
+                  Phone Number
+                </label>
+                <input
+                  type="tel"
+                  id="phone"
+                  name="phone"
+                  value={profileData.phone}
+                  onChange={handleProfileChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  placeholder="+254 700 000 000"
+                />
+              </div>
+
               {/* Academic Information */}
               <div className="border-t pt-6">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Academic Information</h3>
@@ -307,7 +413,8 @@ export default function Profile() {
                       name="university"
                       value={profileData.university}
                       onChange={handleProfileChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                      maxLength={100}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition-colors"
                       placeholder="e.g., University of Nairobi"
                     />
                   </div>
@@ -322,7 +429,8 @@ export default function Profile() {
                       name="department"
                       value={profileData.department}
                       onChange={handleProfileChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                      maxLength={100}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition-colors"
                       placeholder="e.g., Computer Science"
                     />
                   </div>
@@ -338,9 +446,29 @@ export default function Profile() {
                     name="researchField"
                     value={profileData.researchField}
                     onChange={handleProfileChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="e.g., Machine Learning, Data Science"
+                    maxLength={200}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    placeholder="e.g., Machine Learning, Data Science, Artificial Intelligence"
                   />
+                </div>
+
+                <div className="mt-6">
+                  <label htmlFor="bio" className="block text-sm font-medium text-gray-700 mb-2">
+                    Bio
+                  </label>
+                  <textarea
+                    id="bio"
+                    name="bio"
+                    value={profileData.bio}
+                    onChange={handleProfileChange}
+                    rows={4}
+                    maxLength={500}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    placeholder="Tell us about yourself, your research interests, and academic background..."
+                  />
+                  <p className="text-sm text-gray-500 mt-1">
+                    {profileData.bio.length}/500 characters
+                  </p>
                 </div>
               </div>
 
@@ -351,7 +479,17 @@ export default function Profile() {
                   disabled={loading}
                   className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  {loading ? 'Saving...' : 'Save Changes'}
+                  {loading ? (
+                    <span className="flex items-center">
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Saving...
+                    </span>
+                  ) : (
+                    'Save Changes'
+                  )}
                 </button>
               </div>
             </form>
@@ -365,6 +503,21 @@ export default function Profile() {
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-xl font-semibold text-gray-900 mb-6">Change Password</h2>
               
+              {session?.user?.provider === 'google' && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                  <div className="flex">
+                    <svg className="w-5 h-5 text-blue-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div className="ml-3">
+                      <p className="text-sm text-blue-800">
+                        You signed in with Google. Please use your Google account settings to change your password.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               <form onSubmit={handlePasswordSubmit} className="space-y-6">
                 <div>
                   <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700 mb-2">
@@ -377,7 +530,8 @@ export default function Profile() {
                     value={passwordData.currentPassword}
                     onChange={handlePasswordChange}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                    disabled={session?.user?.provider === 'google'}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition-colors disabled:bg-gray-50 disabled:text-gray-500"
                   />
                 </div>
 
@@ -394,8 +548,37 @@ export default function Profile() {
                       onChange={handlePasswordChange}
                       required
                       minLength={6}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                      maxLength={128}
+                      disabled={session?.user?.provider === 'google'}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition-colors disabled:bg-gray-50 disabled:text-gray-500"
                     />
+                    
+                    {/* Password Strength Indicator */}
+                    {passwordData.newPassword && (
+                      <div className="mt-2">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-xs text-gray-600">Password Strength</span>
+                          <span className={`text-xs font-medium ${
+                            passwordStrength.strength === 'weak' ? 'text-red-600' :
+                            passwordStrength.strength === 'medium' ? 'text-yellow-600' :
+                            'text-green-600'
+                          }`}>
+                            {passwordStrength.strength?.toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-1.5">
+                          <div 
+                            className={`h-1.5 rounded-full transition-all duration-300 ${getPasswordStrengthColor()}`}
+                            style={{ width: getPasswordStrengthWidth() }}
+                          ></div>
+                        </div>
+                        {passwordStrength.feedback && (
+                          <p className="text-xs text-gray-600 mt-1">
+                            Missing: {passwordStrength.feedback}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -410,8 +593,13 @@ export default function Profile() {
                       onChange={handlePasswordChange}
                       required
                       minLength={6}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                      maxLength={128}
+                      disabled={session?.user?.provider === 'google'}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition-colors disabled:bg-gray-50 disabled:text-gray-500"
                     />
+                    {passwordData.confirmPassword && passwordData.newPassword !== passwordData.confirmPassword && (
+                      <p className="text-red-600 text-xs mt-1">Passwords do not match</p>
+                    )}
                   </div>
                 </div>
 
@@ -419,18 +607,29 @@ export default function Profile() {
                   <h4 className="text-sm font-medium text-blue-900 mb-2">Password Requirements:</h4>
                   <ul className="text-sm text-blue-800 space-y-1">
                     <li>• At least 6 characters long</li>
-                    <li>• Should contain a mix of letters and numbers</li>
+                    <li>• Should contain both letters and numbers</li>
                     <li>• Avoid using common words or personal information</li>
+                    <li>• Consider using uppercase, lowercase, numbers, and symbols</li>
                   </ul>
                 </div>
 
                 <div className="flex justify-end">
                   <button
                     type="submit"
-                    disabled={loading}
+                    disabled={loading || session?.user?.provider === 'google'}
                     className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {loading ? 'Updating...' : 'Update Password'}
+                    {loading ? (
+                      <span className="flex items-center">
+                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Updating...
+                      </span>
+                    ) : (
+                      'Update Password'
+                    )}
                   </button>
                 </div>
               </form>
@@ -467,7 +666,7 @@ export default function Profile() {
                     <h4 className="font-medium text-gray-900">Active Sessions</h4>
                     <p className="text-sm text-gray-500">Manage your active login sessions</p>
                   </div>
-                  <button className="text-blue-600 text-sm font-medium hover:text-blue-700">
+                  <button className="text-blue-600 text-sm font-medium hover:text-blue-700 transition-colors">
                     View Sessions
                   </button>
                 </div>
