@@ -1,4 +1,4 @@
-// app/api/auth/[...nextauth]/route.js
+// app/api/auth/[...nextauth]/route.js (Updated with role-based routing)
 import NextAuth from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import GoogleProvider from 'next-auth/providers/google'
@@ -12,7 +12,8 @@ export const authOptions = {
       name: 'credentials',
       credentials: {
         email: { label: 'Email', type: 'email' },
-        password: { label: 'Password', type: 'password' }
+        password: { label: 'Password', type: 'password' },
+        role: { label: 'Role', type: 'text' } // Add role to credentials
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
@@ -37,14 +38,32 @@ export const authOptions = {
           throw new Error('Invalid password')
         }
 
+        // Role-specific validations
+        if (credentials.role && credentials.role !== user.role) {
+          throw new Error(`Access denied. This account is not registered as a ${credentials.role}`)
+        }
+
+        // Writer-specific validation
+        if (user.role === 'writer' && !user.writerProfile?.isVerified) {
+          throw new Error('Your writer account is pending admin verification')
+        }
+
         // Return user object that will be stored in JWT and session
         return {
-          id: user._id.toString(), // Convert ObjectId to string
+          id: user._id.toString(),
           email: user.email,
           name: user.name,
           image: user.image,
           role: user.role,
-          emailVerified: user.emailVerified
+          emailVerified: user.emailVerified,
+          // Include role-specific data
+          ...(user.role === 'writer' && {
+            writerProfile: user.writerProfile,
+            isVerified: user.writerProfile?.isVerified
+          }),
+          ...(user.role === 'admin' && {
+            adminProfile: user.adminProfile
+          })
         }
       }
     }),
@@ -62,9 +81,19 @@ export const authOptions = {
         token.id = user.id
         token.role = user.role
         token.emailVerified = user.emailVerified
+        
+        // Store role-specific data in token
+        if (user.role === 'writer') {
+          token.writerProfile = user.writerProfile
+          token.isVerified = user.isVerified
+        }
+        
+        if (user.role === 'admin') {
+          token.adminProfile = user.adminProfile
+        }
       }
 
-      // If signing in with Google, find or create user
+      // If signing in with Google, find or create user (default as student)
       if (account?.provider === 'google' && user) {
         await connectToDatabase()
         
@@ -76,7 +105,8 @@ export const authOptions = {
             email: user.email,
             image: user.image,
             provider: 'google',
-            emailVerified: true
+            emailVerified: true,
+            role: 'student' // Default Google users to student role
           })
         }
         
@@ -94,6 +124,16 @@ export const authOptions = {
         session.user.id = token.id
         session.user.role = token.role
         session.user.emailVerified = token.emailVerified
+        
+        // Include role-specific data in session
+        if (token.role === 'writer') {
+          session.user.writerProfile = token.writerProfile
+          session.user.isVerified = token.isVerified
+        }
+        
+        if (token.role === 'admin') {
+          session.user.adminProfile = token.adminProfile
+        }
       }
       
       return session
@@ -106,11 +146,31 @@ export const authOptions = {
       
       // For credentials, user must be verified (handled in authorize)
       return true
+    },
+
+    async redirect({ url, baseUrl }) {
+      // Role-based redirects after sign in
+      if (url.startsWith(baseUrl)) {
+        const urlObj = new URL(url)
+        const role = urlObj.searchParams.get('role')
+        
+        switch (role) {
+          case 'writer':
+            return `${baseUrl}/writer/dashboard`
+          case 'admin':
+            return `${baseUrl}/admin/dashboard`
+          case 'student':
+          default:
+            return `${baseUrl}/dashboard/overview`
+        }
+      }
+      
+      return baseUrl
     }
   },
 
   pages: {
-    signIn: '/auth/login',
+    signIn: '/auth/login', // Default sign in page
     error: '/auth/error'
   },
 

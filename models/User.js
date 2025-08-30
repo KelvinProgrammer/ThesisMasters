@@ -1,4 +1,6 @@
-// models/User.js - Updated with profile fields
+// models/User.js - Quick Fix Version
+// Replace your existing User model with this updated version
+
 import mongoose from 'mongoose'
 
 const UserSchema = new mongoose.Schema({
@@ -31,24 +33,8 @@ const UserSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['student', 'supervisor', 'admin'],
+    enum: ['student', 'supervisor', 'admin', 'writer'], // Added 'writer' here
     default: 'student'
-  },
-  // Added profile fields
-  university: {
-    type: String,
-    trim: true,
-    maxlength: [100, 'University name must be less than 100 characters']
-  },
-  department: {
-    type: String,
-    trim: true,
-    maxlength: [100, 'Department name must be less than 100 characters']
-  },
-  researchField: {
-    type: String,
-    trim: true,
-    maxlength: [200, 'Research field must be less than 200 characters']
   },
   emailVerified: {
     type: Boolean,
@@ -59,25 +45,76 @@ const UserSchema = new mongoose.Schema({
     enum: ['credentials', 'google'],
     default: 'credentials'
   },
-  // Additional useful fields
-  phone: {
-    type: String,
-    trim: true
+  
+  // Writer-specific fields - only populated for writer role
+  writerProfile: {
+    specializations: [{
+      type: String,
+      enum: ['academic_writing', 'research', 'statistics', 'data_analysis', 'literature_review', 'methodology']
+    }],
+    yearsExperience: {
+      type: Number,
+      min: 0,
+      default: 0
+    },
+    education: {
+      level: {
+        type: String,
+        enum: ['bachelors', 'masters', 'phd']
+      },
+      field: String,
+      institution: String
+    },
+    rating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5
+    },
+    totalProjects: {
+      type: Number,
+      default: 0
+    },
+    completedProjects: {
+      type: Number,
+      default: 0
+    },
+    isVerified: {
+      type: Boolean,
+      default: false // Requires admin verification
+    },
+    availability: {
+      type: String,
+      enum: ['available', 'busy', 'unavailable'],
+      default: 'available'
+    }
   },
-  bio: {
-    type: String,
-    trim: true,
-    maxlength: [500, 'Bio must be less than 500 characters']
-  },
-  lastLogin: {
-    type: Date
+  
+  // Admin-specific fields - only populated for admin role
+  adminProfile: {
+    permissions: [{
+      type: String,
+      enum: ['user_management', 'writer_management', 'content_management', 'payment_management', 'system_settings']
+    }],
+    department: {
+      type: String,
+      enum: ['operations', 'quality_assurance', 'customer_support', 'finance', 'technical']
+    },
+    accessLevel: {
+      type: String,
+      enum: ['junior', 'senior', 'super_admin'],
+      default: 'junior'
+    }
   }
 }, {
   timestamps: true
 })
 
-// Index for better performance - removed email index to avoid duplication since unique: true already creates one
-UserSchema.index({ createdAt: -1 })
+// Indexes for better performance
+UserSchema.index({ email: 1 })
+UserSchema.index({ role: 1 })
+UserSchema.index({ 'writerProfile.isVerified': 1 })
+UserSchema.index({ 'writerProfile.availability': 1 })
 
 // Instance methods
 UserSchema.methods.toSafeObject = function() {
@@ -86,17 +123,41 @@ UserSchema.methods.toSafeObject = function() {
   return userObject
 }
 
-// Update last login
-UserSchema.methods.updateLastLogin = function() {
-  this.lastLogin = new Date()
+UserSchema.methods.isWriter = function() {
+  return this.role === 'writer'
+}
+
+UserSchema.methods.isAdmin = function() {
+  return this.role === 'admin'
+}
+
+UserSchema.methods.updateWriterStats = async function(projectCompleted = false) {
+  if (this.role !== 'writer') return
+  
+  this.writerProfile.totalProjects += 1
+  if (projectCompleted) {
+    this.writerProfile.completedProjects += 1
+  }
+  
   return this.save()
 }
 
-// Static method to find by email
-UserSchema.statics.findByEmail = function(email) {
-  return this.findOne({ email: email.toLowerCase() })
+// Static methods
+UserSchema.statics.getAvailableWriters = function() {
+  return this.find({ 
+    role: 'writer',
+    'writerProfile.availability': 'available',
+    'writerProfile.isVerified': true
+  }).sort({ 'writerProfile.rating': -1 })
 }
 
-// Make sure to use this exact export pattern
+UserSchema.statics.getWritersBySpecialization = function(specialization) {
+  return this.find({
+    role: 'writer',
+    'writerProfile.specializations': specialization,
+    'writerProfile.isVerified': true
+  })
+}
+
 const User = mongoose.models.User || mongoose.model('User', UserSchema)
 export default User
