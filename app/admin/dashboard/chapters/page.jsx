@@ -1,4 +1,4 @@
-// app/admin/dashboard/chapters/page.jsx - Admin Chapters Management
+// app/admin/dashboard/chapters/page.jsx - Updated Admin Chapters Management with Real APIs
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -20,6 +20,18 @@ export default function ChaptersManagement() {
   const [selectedChapter, setSelectedChapter] = useState(null)
   const [showModal, setShowModal] = useState(false)
   const [modalType, setModalType] = useState('') // 'view', 'assign', 'reassign', 'status'
+  const [statistics, setStatistics] = useState({})
+  const [pagination, setPagination] = useState({})
+  const [writers, setWriters] = useState([]) // Available writers for assignment
+  
+  // Modal form data
+  const [modalData, setModalData] = useState({
+    writerId: '',
+    status: '',
+    deadline: '',
+    estimatedCost: '',
+    reason: ''
+  })
 
   useEffect(() => {
     if (status === 'loading') return
@@ -33,216 +45,123 @@ export default function ChaptersManagement() {
     }
 
     fetchChapters()
+    fetchWriters() // Fetch available writers for assignment
   }, [status, session, router])
 
-  const fetchChapters = async () => {
-    try {
-      // Mock data - replace with actual API call
-      const mockChapters = [
-        {
-          _id: '1',
-          title: 'Literature Review',
-          chapterNumber: 2,
-          status: 'in_progress',
-          wordCount: 3200,
-          targetWordCount: 4000,
-          deadline: new Date('2024-03-20'),
-          createdAt: new Date('2024-03-01'),
-          updatedAt: new Date('2024-03-12'),
-          isPaid: true,
-          estimatedCost: 15000,
-          level: 'masters',
-          workType: 'coursework',
-          urgency: 'normal',
-          userId: {
-            _id: 'user1',
-            name: 'John Doe',
-            email: 'john.doe@example.com'
-          },
-          writerId: {
-            _id: 'writer1',
-            name: 'Dr. Sarah Wilson',
-            email: 'sarah.wilson@example.com'
-          },
-          paymentId: {
-            _id: 'payment1',
-            status: 'completed',
-            amount: 15000
-          }
-        },
-        {
-          _id: '2',
-          title: 'Methodology',
-          chapterNumber: 3,
-          status: 'completed',
-          wordCount: 4500,
-          targetWordCount: 4000,
-          deadline: new Date('2024-03-15'),
-          createdAt: new Date('2024-02-20'),
-          updatedAt: new Date('2024-03-14'),
-          completedAt: new Date('2024-03-14'),
-          isPaid: true,
-          estimatedCost: 22000,
-          level: 'phd',
-          workType: 'coursework',
-          urgency: 'urgent',
-          userId: {
-            _id: 'user2',
-            name: 'Alice Johnson',
-            email: 'alice.johnson@example.com'
-          },
-          writerId: {
-            _id: 'writer2',
-            name: 'Prof. Michael Chen',
-            email: 'michael.chen@example.com'
-          },
-          paymentId: {
-            _id: 'payment2',
-            status: 'completed',
-            amount: 22000
-          }
-        },
-        {
-          _id: '3',
-          title: 'Data Analysis',
-          chapterNumber: 4,
-          status: 'revision',
-          wordCount: 3800,
-          targetWordCount: 4200,
-          deadline: new Date('2024-03-25'),
-          createdAt: new Date('2024-03-05'),
-          updatedAt: new Date('2024-03-13'),
-          isPaid: true,
-          estimatedCost: 18500,
-          level: 'masters',
-          workType: 'statistics',
-          urgency: 'normal',
-          userId: {
-            _id: 'user3',
-            name: 'Michael Brown',
-            email: 'michael.brown@example.com'
-          },
-          writerId: {
-            _id: 'writer3',
-            name: 'Dr. Maria Rodriguez',
-            email: 'maria.rodriguez@example.com'
-          },
-          paymentId: {
-            _id: 'payment3',
-            status: 'completed',
-            amount: 18500
-          },
-          feedback: [
-            {
-              reviewer: 'Student',
-              comment: 'Please add more statistical analysis and include SPSS output',
-              rating: 3,
-              createdAt: new Date('2024-03-13')
-            }
-          ]
-        },
-        {
-          _id: '4',
-          title: 'Introduction',
-          chapterNumber: 1,
-          status: 'draft',
-          wordCount: 0,
-          targetWordCount: 3000,
-          deadline: new Date('2024-03-30'),
-          createdAt: new Date('2024-03-10'),
-          updatedAt: new Date('2024-03-10'),
-          isPaid: false,
-          estimatedCost: 12000,
-          level: 'masters',
-          workType: 'coursework',
-          urgency: 'normal',
-          userId: {
-            _id: 'user4',
-            name: 'Sarah Davis',
-            email: 'sarah.davis@example.com'
-          },
-          writerId: null,
-          paymentId: null
-        },
-        {
-          _id: '5',
-          title: 'Conclusion',
-          chapterNumber: 5,
-          status: 'in_progress',
-          wordCount: 2100,
-          targetWordCount: 3500,
-          deadline: new Date('2024-03-18'),
-          createdAt: new Date('2024-03-08'),
-          updatedAt: new Date('2024-03-12'),
-          isPaid: true,
-          estimatedCost: 16000,
-          level: 'masters',
-          workType: 'coursework',
-          urgency: 'very_urgent',
-          userId: {
-            _id: 'user5',
-            name: 'David Wilson',
-            email: 'david.wilson@example.com'
-          },
-          writerId: {
-            _id: 'writer2',
-            name: 'Prof. Michael Chen',
-            email: 'michael.chen@example.com'
-          },
-          paymentId: {
-            _id: 'payment5',
-            status: 'completed',
-            amount: 16000
-          }
-        }
-      ]
+  useEffect(() => {
+    fetchChapters()
+  }, [filterStatus, filterPaid, searchTerm])
 
-      setChapters(mockChapters)
+  const fetchChapters = async (page = 1) => {
+    try {
+      setLoading(true)
+      setError('')
+
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: '20'
+      })
+
+      if (filterStatus !== 'all') {
+        params.append('status', filterStatus)
+      }
+
+      if (filterPaid !== 'all') {
+        params.append('isPaid', filterPaid)
+      }
+
+      if (searchTerm.trim()) {
+        params.append('search', searchTerm.trim())
+      }
+
+      const response = await fetch(`/api/admin/chapters?${params}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Failed to fetch chapters')
+      }
+
+      const data = await response.json()
+      setChapters(data.chapters || [])
+      setStatistics(data.statistics || {})
+      setPagination(data.pagination || {})
+
     } catch (err) {
-      setError('Failed to fetch chapters')
+      console.error('Fetch chapters error:', err)
+      setError(err.message || 'Failed to fetch chapters')
     } finally {
       setLoading(false)
     }
   }
 
+  const fetchWriters = async () => {
+    try {
+      const response = await fetch('/api/admin/users?role=writer&status=active&verified=true&limit=100', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setWriters(data.users || [])
+      }
+    } catch (err) {
+      console.error('Fetch writers error:', err)
+    }
+  }
+
   const handleChapterAction = async (action, chapterId, data = {}) => {
     try {
-      // Mock API call - replace with actual implementation
-      console.log(`${action} chapter ${chapterId}:`, data)
+      setLoading(true)
+      setError('')
+
+      const response = await fetch('/api/admin/chapters', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chapterId,
+          action,
+          data
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || `Failed to ${action} chapter`)
+      }
+
+      const result = await response.json()
+      setSuccess(result.message)
       
       // Update local state
-      setChapters(prev => prev.map(chapter => {
-        if (chapter._id === chapterId) {
-          switch (action) {
-            case 'assign_writer':
-              return {
-                ...chapter,
-                writerId: data.writerId,
-                status: 'in_progress'
-              }
-            case 'change_status':
-              return {
-                ...chapter,
-                status: data.status,
-                ...(data.status === 'completed' && { completedAt: new Date() })
-              }
-            case 'extend_deadline':
-              return {
-                ...chapter,
-                deadline: new Date(data.deadline)
-              }
-            default:
-              return chapter
-          }
-        }
-        return chapter
-      }))
+      setChapters(prev => prev.map(chapter => 
+        chapter._id === chapterId ? result.chapter : chapter
+      ))
 
-      setSuccess(`Chapter ${action.replace('_', ' ')} successfully`)
       setShowModal(false)
       setSelectedChapter(null)
+      setModalData({
+        writerId: '',
+        status: '',
+        deadline: '',
+        estimatedCost: '',
+        reason: ''
+      })
+
     } catch (err) {
-      setError(`Failed to ${action.replace('_', ' ')} chapter`)
+      console.error(`Chapter ${action} error:`, err)
+      setError(err.message || `Failed to ${action} chapter`)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -250,6 +169,62 @@ export default function ChaptersManagement() {
     setModalType(type)
     setSelectedChapter(chapter)
     setShowModal(true)
+    
+    // Pre-populate modal data based on chapter and type
+    if (type === 'status') {
+      setModalData({ ...modalData, status: chapter.status })
+    } else if (type === 'assign' || type === 'reassign') {
+      setModalData({ ...modalData, writerId: chapter.writerId?._id || '' })
+    }
+  }
+
+  const handleModalSubmit = () => {
+    if (!selectedChapter) return
+
+    let actionData = {}
+    
+    switch (modalType) {
+      case 'assign':
+      case 'reassign':
+        if (!modalData.writerId) {
+          setError('Please select a writer')
+          return
+        }
+        actionData = { writerId: modalData.writerId }
+        break
+        
+      case 'status':
+        if (!modalData.status) {
+          setError('Please select a status')
+          return
+        }
+        actionData = { status: modalData.status }
+        break
+        
+      case 'extend_deadline':
+        if (!modalData.deadline) {
+          setError('Please select a new deadline')
+          return
+        }
+        actionData = { deadline: modalData.deadline }
+        break
+        
+      case 'update_cost':
+        if (!modalData.estimatedCost || modalData.estimatedCost <= 0) {
+          setError('Please enter a valid cost')
+          return
+        }
+        actionData = { estimatedCost: parseFloat(modalData.estimatedCost) }
+        break
+    }
+
+    const action = modalType === 'assign' || modalType === 'reassign' 
+      ? 'assign_writer' 
+      : modalType === 'status' 
+      ? 'change_status'
+      : modalType
+
+    handleChapterAction(action, selectedChapter._id, actionData)
   }
 
   const getStatusColor = (status) => {
@@ -290,38 +265,10 @@ export default function ChaptersManagement() {
   }
 
   const isOverdue = (deadline, status) => {
-    return (status === 'in_progress' || status === 'revision') && new Date(deadline) < new Date()
+    return ['draft', 'in_progress', 'revision'].includes(status) && new Date(deadline) < new Date()
   }
 
-  // Filter chapters
-  const filteredChapters = chapters.filter(chapter => {
-    const matchesStatus = filterStatus === 'all' || chapter.status === filterStatus
-    const matchesPaid = filterPaid === 'all' || 
-      (filterPaid === 'paid' && chapter.isPaid) || 
-      (filterPaid === 'unpaid' && !chapter.isPaid)
-    
-    const matchesSearch = !searchTerm || 
-      chapter.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      chapter.userId.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      chapter.userId.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (chapter.writerId && chapter.writerId.name.toLowerCase().includes(searchTerm.toLowerCase()))
-
-    return matchesStatus && matchesPaid && matchesSearch
-  })
-
-  // Calculate stats
-  const stats = {
-    total: chapters.length,
-    inProgress: chapters.filter(c => c.status === 'in_progress').length,
-    completed: chapters.filter(c => c.status === 'completed').length,
-    revision: chapters.filter(c => c.status === 'revision').length,
-    paid: chapters.filter(c => c.isPaid).length,
-    unpaid: chapters.filter(c => !c.isPaid).length,
-    overdue: chapters.filter(c => isOverdue(c.deadline, c.status)).length,
-    totalRevenue: chapters.filter(c => c.isPaid).reduce((sum, c) => sum + c.estimatedCost, 0)
-  }
-
-  if (loading) {
+  if (loading && chapters.length === 0) {
     return (
       <AdminDashboardLayout>
         <div className="p-6">
@@ -362,8 +309,18 @@ export default function ChaptersManagement() {
 
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Chapters Management</h1>
-          <p className="text-gray-600">Monitor all chapter orders, assignments, and progress</p>
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">Chapters Management</h1>
+              <p className="text-gray-600">Monitor all chapter orders, assignments, and progress</p>
+            </div>
+            <button
+              onClick={() => fetchChapters()}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700 transition-colors"
+            >
+              ↻ Refresh
+            </button>
+          </div>
         </div>
 
         {/* Stats */}
@@ -376,7 +333,7 @@ export default function ChaptersManagement() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+                <p className="text-2xl font-bold text-gray-900">{statistics.total || 0}</p>
                 <p className="text-gray-600 text-sm">Total Chapters</p>
               </div>
             </div>
@@ -390,7 +347,7 @@ export default function ChaptersManagement() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{stats.inProgress}</p>
+                <p className="text-2xl font-bold text-gray-900">{statistics.inProgress || 0}</p>
                 <p className="text-gray-600 text-sm">In Progress</p>
               </div>
             </div>
@@ -404,7 +361,7 @@ export default function ChaptersManagement() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{stats.completed}</p>
+                <p className="text-2xl font-bold text-gray-900">{statistics.completed || 0}</p>
                 <p className="text-gray-600 text-sm">Completed</p>
               </div>
             </div>
@@ -418,7 +375,7 @@ export default function ChaptersManagement() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{stats.overdue}</p>
+                <p className="text-2xl font-bold text-gray-900">{statistics.overdue || 0}</p>
                 <p className="text-gray-600 text-sm">Overdue</p>
               </div>
             </div>
@@ -435,7 +392,7 @@ export default function ChaptersManagement() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{stats.revision}</p>
+                <p className="text-2xl font-bold text-gray-900">{statistics.revision || 0}</p>
                 <p className="text-gray-600 text-sm">Under Revision</p>
               </div>
             </div>
@@ -450,7 +407,7 @@ export default function ChaptersManagement() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{stats.paid}</p>
+                <p className="text-2xl font-bold text-gray-900">{statistics.paid || 0}</p>
                 <p className="text-gray-600 text-sm">Paid Orders</p>
               </div>
             </div>
@@ -464,7 +421,7 @@ export default function ChaptersManagement() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{stats.unpaid}</p>
+                <p className="text-2xl font-bold text-gray-900">{statistics.unpaid || 0}</p>
                 <p className="text-gray-600 text-sm">Unpaid Orders</p>
               </div>
             </div>
@@ -479,7 +436,7 @@ export default function ChaptersManagement() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.totalRevenue)}</p>
+                <p className="text-2xl font-bold text-gray-900">{formatCurrency(statistics.totalRevenue || 0)}</p>
                 <p className="text-gray-600 text-sm">Total Revenue</p>
               </div>
             </div>
@@ -513,6 +470,7 @@ export default function ChaptersManagement() {
                 <option value="completed">Completed</option>
                 <option value="revision">Under Revision</option>
                 <option value="approved">Approved</option>
+                <option value="overdue">Overdue</option>
               </select>
             </div>
 
@@ -533,164 +491,237 @@ export default function ChaptersManagement() {
 
         {/* Chapters Table */}
         <div className="bg-white rounded-lg shadow overflow-hidden">
-          {filteredChapters.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Chapter
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Student
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Writer
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Progress
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Payment
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Deadline
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredChapters.map((chapter) => (
-                    <tr key={chapter._id} className={`hover:bg-gray-50 ${isOverdue(chapter.deadline, chapter.status) ? 'bg-red-50' : ''}`}>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            Ch. {chapter.chapterNumber}: {chapter.title}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {chapter.level.toUpperCase()} • {chapter.workType.replace('_', ' ')}
-                          </div>
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getUrgencyColor(chapter.urgency)}`}>
-                            {chapter.urgency.replace('_', ' ').toUpperCase()}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">{chapter.userId.name}</div>
-                          <div className="text-sm text-gray-500">{chapter.userId.email}</div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {chapter.writerId ? (
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">{chapter.writerId.name}</div>
-                            <div className="text-sm text-gray-500">{chapter.writerId.email}</div>
-                          </div>
-                        ) : (
-                          <span className="text-sm text-red-500">Unassigned</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div>
-                          <div className="text-sm text-gray-900">
-                            {chapter.wordCount.toLocaleString()} / {chapter.targetWordCount.toLocaleString()} words
-                          </div>
-                          <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
-                            <div 
-                              className="bg-blue-600 h-2 rounded-full" 
-                              style={{ width: `${Math.min((chapter.wordCount / chapter.targetWordCount) * 100, 100)}%` }}
-                            ></div>
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            {Math.round((chapter.wordCount / chapter.targetWordCount) * 100)}% complete
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(chapter.status)}`}>
-                          {chapter.status === 'in_progress' ? 'In Progress' : 
-                           chapter.status.charAt(0).toUpperCase() + chapter.status.slice(1)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            {formatCurrency(chapter.estimatedCost)}
-                          </div>
-                          <div className={`text-sm ${chapter.isPaid ? 'text-green-600' : 'text-red-600'}`}>
-                            {chapter.isPaid ? 'Paid' : 'Unpaid'}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className={`text-sm ${isOverdue(chapter.deadline, chapter.status) ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
-                          {new Date(chapter.deadline).toLocaleDateString()}
-                        </div>
-                        {chapter.completedAt && (
-                          <div className="text-xs text-green-600">
-                            Completed: {new Date(chapter.completedAt).toLocaleDateString()}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center justify-end space-x-2">
-                          <button
-                            onClick={() => openModal('view', chapter)}
-                            className="text-blue-600 hover:text-blue-900"
-                            title="View Details"
-                          >
-                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                              <path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/>
-                              <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd"/>
-                            </svg>
-                          </button>
-
-                          {!chapter.writerId && (
-                            <button
-                              onClick={() => openModal('assign', chapter)}
-                              className="text-green-600 hover:text-green-900"
-                              title="Assign Writer"
-                            >
-                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6z"/>
-                              </svg>
-                            </button>
-                          )}
-
-                          {chapter.writerId && (
-                            <button
-                              onClick={() => openModal('reassign', chapter)}
-                              className="text-purple-600 hover:text-purple-900"
-                              title="Reassign Writer"
-                            >
-                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z"/>
-                              </svg>
-                            </button>
-                          )}
-
-                          <button
-                            onClick={() => openModal('status', chapter)}
-                            className="text-orange-600 hover:text-orange-900"
-                            title="Change Status"
-                          >
-                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                              <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.379-8.379-2.828-2.828z"/>
-                            </svg>
-                          </button>
-                        </div>
-                      </td>
+          {chapters.length > 0 ? (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Chapter
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Student
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Writer
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Progress
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Payment
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Deadline
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {chapters.map((chapter) => (
+                      <tr key={chapter._id} className={`hover:bg-gray-50 ${chapter.isOverdue ? 'bg-red-50' : ''}`}>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">
+                              Ch. {chapter.chapterNumber}: {chapter.title}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {chapter.level?.toUpperCase()} • {chapter.workType?.replace('_', ' ')}
+                            </div>
+                            {chapter.urgency && (
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getUrgencyColor(chapter.urgency)}`}>
+                                {chapter.urgency.replace('_', ' ').toUpperCase()}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{chapter.user?.name || 'Unknown'}</div>
+                            <div className="text-sm text-gray-500">{chapter.user?.email || 'No email'}</div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {chapter.writer ? (
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">{chapter.writer.name}</div>
+                              <div className="text-sm text-gray-500">{chapter.writer.email}</div>
+                            </div>
+                          ) : (
+                            <span className="text-sm text-red-500">Unassigned</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <div className="text-sm text-gray-900">
+                              {(chapter.wordCount || 0).toLocaleString()} / {(chapter.targetWordCount || 0).toLocaleString()} words
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
+                              <div 
+                                className="bg-blue-600 h-2 rounded-full" 
+                                style={{ 
+                                  width: `${Math.min(((chapter.wordCount || 0) / (chapter.targetWordCount || 1)) * 100, 100)}%` 
+                                }}
+                              ></div>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {Math.round(((chapter.wordCount || 0) / (chapter.targetWordCount || 1)) * 100)}% complete
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(chapter.status)}`}>
+                            {chapter.status === 'in_progress' ? 'In Progress' : 
+                             chapter.status.charAt(0).toUpperCase() + chapter.status.slice(1)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">
+                              {formatCurrency(chapter.estimatedCost || 0)}
+                            </div>
+                            <div className={`text-sm ${chapter.isPaid ? 'text-green-600' : 'text-red-600'}`}>
+                              {chapter.isPaid ? 'Paid' : 'Unpaid'}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className={`text-sm ${chapter.isOverdue ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
+                            {chapter.deadline ? new Date(chapter.deadline).toLocaleDateString() : 'No deadline'}
+                          </div>
+                          {chapter.completedAt && (
+                            <div className="text-xs text-green-600">
+                              Completed: {new Date(chapter.completedAt).toLocaleDateString()}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <div className="flex items-center justify-end space-x-2">
+                            <button
+                              onClick={() => openModal('view', chapter)}
+                              className="text-blue-600 hover:text-blue-900"
+                              title="View Details"
+                            >
+                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/>
+                                <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd"/>
+                              </svg>
+                            </button>
+
+                            {!chapter.writer && (
+                              <button
+                                onClick={() => openModal('assign', chapter)}
+                                className="text-green-600 hover:text-green-900"
+                                title="Assign Writer"
+                              >
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                  <path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6z"/>
+                                </svg>
+                              </button>
+                            )}
+
+                            {chapter.writer && (
+                              <button
+                                onClick={() => openModal('reassign', chapter)}
+                                className="text-purple-600 hover:text-purple-900"
+                                title="Reassign Writer"
+                              >
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                  <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z"/>
+                                </svg>
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => openModal('status', chapter)}
+                              className="text-orange-600 hover:text-orange-900"
+                              title="Change Status"
+                            >
+                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.379-8.379-2.828-2.828z"/>
+                              </svg>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {pagination.pages > 1 && (
+                <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+                  <div className="flex-1 flex justify-between sm:hidden">
+                    <button
+                      onClick={() => fetchChapters(pagination.current - 1)}
+                      disabled={pagination.current <= 1}
+                      className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      onClick={() => fetchChapters(pagination.current + 1)}
+                      disabled={pagination.current >= pagination.pages}
+                      className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                  <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm text-gray-700">
+                        Showing <span className="font-medium">{((pagination.current - 1) * pagination.limit) + 1}</span> to{' '}
+                        <span className="font-medium">
+                          {Math.min(pagination.current * pagination.limit, pagination.total)}
+                        </span>{' '}
+                        of <span className="font-medium">{pagination.total}</span> results
+                      </p>
+                    </div>
+                    <div>
+                      <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                        <button
+                          onClick={() => fetchChapters(pagination.current - 1)}
+                          disabled={pagination.current <= 1}
+                          className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Previous
+                        </button>
+                        {Array.from({ length: Math.min(5, pagination.pages) }, (_, i) => {
+                          const page = i + 1
+                          return (
+                            <button
+                              key={page}
+                              onClick={() => fetchChapters(page)}
+                              className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                                page === pagination.current
+                                  ? 'z-10 bg-red-50 border-red-500 text-red-600'
+                                  : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                              }`}
+                            >
+                              {page}
+                            </button>
+                          )
+                        })}
+                        <button
+                          onClick={() => fetchChapters(pagination.current + 1)}
+                          disabled={pagination.current >= pagination.pages}
+                          className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Next
+                        </button>
+                      </nav>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           ) : (
             <div className="p-12 text-center">
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -735,91 +766,72 @@ export default function ChaptersManagement() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                       <div>
                         <span className="font-medium text-gray-900">Student:</span>
-                        <p className="text-gray-600">{selectedChapter.userId.name}</p>
+                        <p className="text-gray-600">{selectedChapter.user?.name || 'Unknown'}</p>
                       </div>
                       <div>
                         <span className="font-medium text-gray-900">Level:</span>
-                        <p className="text-gray-600">{selectedChapter.level.toUpperCase()}</p>
+                        <p className="text-gray-600">{selectedChapter.level?.toUpperCase() || 'N/A'}</p>
                       </div>
                       <div>
                         <span className="font-medium text-gray-900">Work Type:</span>
-                        <p className="text-gray-600">{selectedChapter.workType.replace('_', ' ')}</p>
+                        <p className="text-gray-600">{selectedChapter.workType?.replace('_', ' ') || 'N/A'}</p>
                       </div>
                       <div>
                         <span className="font-medium text-gray-900">Cost:</span>
-                        <p className="text-gray-600">{formatCurrency(selectedChapter.estimatedCost)}</p>
+                        <p className="text-gray-600">{formatCurrency(selectedChapter.estimatedCost || 0)}</p>
                       </div>
                       <div>
                         <span className="font-medium text-gray-900">Progress:</span>
                         <p className="text-gray-600">
-                          {selectedChapter.wordCount} / {selectedChapter.targetWordCount} words
+                          {selectedChapter.wordCount || 0} / {selectedChapter.targetWordCount || 0} words
                         </p>
                       </div>
                       <div>
                         <span className="font-medium text-gray-900">Deadline:</span>
-                        <p className="text-gray-600">{new Date(selectedChapter.deadline).toLocaleDateString()}</p>
+                        <p className="text-gray-600">
+                          {selectedChapter.deadline ? new Date(selectedChapter.deadline).toLocaleDateString() : 'No deadline'}
+                        </p>
                       </div>
                     </div>
                   </div>
 
                   {/* Modal Content based on type */}
-                  {modalType === 'assign' || modalType === 'reassign' ? (
+                  {(modalType === 'assign' || modalType === 'reassign') && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Select Writer:
                       </label>
-                      <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                      <select 
+                        value={modalData.writerId}
+                        onChange={(e) => setModalData({...modalData, writerId: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                      >
                         <option value="">Select a writer...</option>
-                        <option value="writer1">Dr. Sarah Wilson (Literature, Research)</option>
-                        <option value="writer2">Prof. Michael Chen (Statistics, Data Analysis)</option>
-                        <option value="writer3">Dr. Maria Rodriguez (Research, Methodology)</option>
+                        {writers.map(writer => (
+                          <option key={writer._id} value={writer._id}>
+                            {writer.name} ({writer.writerProfile?.specializations?.join(', ') || 'No specializations'})
+                          </option>
+                        ))}
                       </select>
                     </div>
-                  ) : modalType === 'status' ? (
+                  )}
+
+                  {modalType === 'status' && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         New Status:
                       </label>
-                      <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                      <select 
+                        value={modalData.status}
+                        onChange={(e) => setModalData({...modalData, status: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                      >
                         <option value="draft">Draft</option>
                         <option value="in_progress">In Progress</option>
                         <option value="completed">Completed</option>
                         <option value="revision">Under Revision</option>
                         <option value="approved">Approved</option>
                       </select>
-                    </div>
-                  ) : null}
-
-                  {/* Feedback Section for view modal */}
-                  {modalType === 'view' && selectedChapter.feedback && selectedChapter.feedback.length > 0 && (
-                    <div className="bg-yellow-50 p-4 rounded-lg">
-                      <h4 className="font-medium text-gray-900 mb-2">Recent Feedback</h4>
-                      {selectedChapter.feedback.map((feedback, index) => (
-                        <div key={index} className="mb-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium text-gray-900">{feedback.reviewer}</span>
-                            <span className="text-xs text-gray-500">
-                              {new Date(feedback.createdAt).toLocaleDateString()}
-                            </span>
-                          </div>
-                          <p className="text-sm text-gray-600">"{feedback.comment}"</p>
-                          {feedback.rating && (
-                            <div className="flex items-center mt-1">
-                              {[...Array(5)].map((_, i) => (
-                                <svg
-                                  key={i}
-                                  className={`w-3 h-3 ${i < feedback.rating ? 'text-yellow-400' : 'text-gray-300'}`}
-                                  fill="currentColor"
-                                  viewBox="0 0 20 20"
-                                >
-                                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
-                                </svg>
-                              ))}
-                              <span className="text-xs text-gray-500 ml-1">({feedback.rating}/5)</span>
-                            </div>
-                          )}
-                        </div>
-                      ))}
                     </div>
                   )}
 
@@ -835,29 +847,15 @@ export default function ChaptersManagement() {
                     ) : (
                       <>
                         <button
-                          onClick={() => {
-                            // Handle action based on modal type
-                            const actionData = {}
-                            if (modalType === 'assign' || modalType === 'reassign') {
-                              const select = document.querySelector('select')
-                              actionData.writerId = select.value
-                            } else if (modalType === 'status') {
-                              const select = document.querySelector('select')
-                              actionData.status = select.value
-                            }
-                            
-                            const actionName = modalType === 'assign' ? 'assign_writer' : 
-                                             modalType === 'reassign' ? 'assign_writer' : 
-                                             'change_status'
-                            
-                            handleChapterAction(actionName, selectedChapter._id, actionData)
-                          }}
-                          className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                          onClick={handleModalSubmit}
+                          disabled={loading}
+                          className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50"
                         >
-                          Confirm {modalType.charAt(0).toUpperCase() + modalType.slice(1)}
+                          {loading ? 'Saving...' : `Confirm ${modalType.charAt(0).toUpperCase() + modalType.slice(1)}`}
                         </button>
                         <button
                           onClick={() => setShowModal(false)}
+                          disabled={loading}
                           className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg font-semibold hover:bg-gray-200 transition-colors"
                         >
                           Cancel

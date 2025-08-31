@@ -1,4 +1,4 @@
-// app/admin/dashboard/page.jsx - Admin Dashboard Overview
+// app/admin/dashboard/page.jsx - Updated Admin Dashboard with Real APIs
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -10,16 +10,7 @@ import Alert from '@/components/Alert'
 export default function AdminDashboard() {
   const { data: session, status } = useSession()
   const router = useRouter()
-  const [stats, setStats] = useState({
-    totalUsers: 0,
-    totalWriters: 0,
-    totalChapters: 0,
-    totalRevenue: 0,
-    pendingApprovals: 0,
-    activeProjects: 0,
-    completedProjects: 0,
-    overdueProjects: 0
-  })
+  const [stats, setStats] = useState({})
   const [recentActivity, setRecentActivity] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -40,66 +31,106 @@ export default function AdminDashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      // Mock data - replace with actual API calls
-      setStats({
-        totalUsers: 1247,
-        totalWriters: 58,
-        totalChapters: 2341,
-        totalRevenue: 1850000,
-        pendingApprovals: 12,
-        activeProjects: 156,
-        completedProjects: 1890,
-        overdueProjects: 8
+      setLoading(true)
+      setError('')
+
+      // Fetch dashboard statistics
+      const statsResponse = await fetch('/api/admin/stats?details=true&timeframe=30', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
       })
 
-      setRecentActivity([
-        {
-          id: 1,
-          type: 'user_registration',
-          message: 'John Doe registered as a new student',
-          timestamp: new Date(Date.now() - 1000 * 60 * 30), // 30 minutes ago
-          user: 'John Doe',
-          action: 'registered'
-        },
-        {
-          id: 2,
-          type: 'writer_application',
-          message: 'Dr. Sarah Wilson applied to become a writer',
-          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 hours ago
-          user: 'Dr. Sarah Wilson',
-          action: 'writer_application'
-        },
-        {
-          id: 3,
-          type: 'chapter_completed',
-          message: 'Chapter 5: Methodology completed by Alice Johnson',
-          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 4), // 4 hours ago
-          user: 'Alice Johnson',
-          action: 'chapter_completed'
-        },
-        {
-          id: 4,
-          type: 'payment_received',
-          message: 'Payment of KSH 12,000 received from Michael Brown',
-          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 6), // 6 hours ago
-          user: 'Michael Brown',
-          action: 'payment'
-        },
-        {
-          id: 5,
-          type: 'writer_banned',
-          message: 'Writer David Lee was temporarily suspended',
-          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 8), // 8 hours ago
-          user: 'David Lee',
-          action: 'suspended'
-        }
-      ])
+      if (!statsResponse.ok) {
+        const errorData = await statsResponse.json()
+        throw new Error(errorData.message || 'Failed to fetch dashboard data')
+      }
+
+      const data = await statsResponse.json()
+      
+      // Transform the data for the dashboard
+      const transformedStats = {
+        totalUsers: data.statistics.users.totalUsers || 0,
+        totalWriters: data.statistics.users.totalWriters || 0,
+        totalChapters: data.statistics.chapters.totalChapters || 0,
+        totalRevenue: data.statistics.payments.totalRevenue || 0,
+        pendingApprovals: data.statistics.users.pendingWriters || 0,
+        activeProjects: data.statistics.chapters.inProgressChapters || 0,
+        completedProjects: data.statistics.chapters.completedChapters || 0,
+        overdueProjects: data.statistics.chapters.overdueChapters || 0,
+        userGrowthRate: data.statistics.users.userGrowthRate || 0,
+        writerGrowthRate: calculateGrowthRate(
+          data.statistics.users.totalWriters,
+          data.statistics.users.newUsersThisPeriod
+        ),
+        revenueGrowthRate: data.statistics.payments.revenueGrowthRate || 0,
+        completionRate: data.statistics.chapters.completionRate || 0
+      }
+
+      setStats(transformedStats)
+
+      // Transform recent activity
+      if (data.recentActivity) {
+        const activities = []
+
+        // Add user registrations
+        data.recentActivity.newUsers?.forEach(user => {
+          activities.push({
+            id: `user_${user._id}`,
+            type: user.role === 'writer' ? 'writer_application' : 'user_registration',
+            message: user.role === 'writer' 
+              ? `${user.name} applied to become a writer`
+              : `${user.name} registered as a new student`,
+            timestamp: new Date(user.createdAt),
+            user: user.name,
+            action: user.role === 'writer' ? 'writer_application' : 'registered'
+          })
+        })
+
+        // Add chapter completions
+        data.recentActivity.completedChapters?.forEach(chapter => {
+          activities.push({
+            id: `chapter_${chapter._id}`,
+            type: 'chapter_completed',
+            message: `Chapter ${chapter.chapterNumber}: ${chapter.title} completed by ${chapter.userId?.name}`,
+            timestamp: new Date(chapter.completedAt),
+            user: chapter.userId?.name,
+            action: 'chapter_completed'
+          })
+        })
+
+        // Add recent payments
+        data.recentActivity.recentPayments?.forEach(payment => {
+          activities.push({
+            id: `payment_${payment._id}`,
+            type: 'payment_received',
+            message: `Payment of ${formatCurrency(payment.amount)} received from ${payment.userId?.name}`,
+            timestamp: new Date(payment.createdAt),
+            user: payment.userId?.name,
+            action: 'payment'
+          })
+        })
+
+        // Sort by timestamp and take latest 10
+        activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+        setRecentActivity(activities.slice(0, 10))
+      }
 
     } catch (err) {
-      setError('Failed to fetch dashboard data')
+      console.error('Dashboard fetch error:', err)
+      setError(err.message || 'Failed to fetch dashboard data')
     } finally {
       setLoading(false)
     }
+  }
+
+  // Helper function to calculate growth rate
+  const calculateGrowthRate = (total, newInPeriod) => {
+    if (!total || !newInPeriod) return 0
+    const previous = total - newInPeriod
+    if (previous <= 0) return 100
+    return Math.round((newInPeriod / previous) * 100)
   }
 
   const getActivityIcon = (type) => {
@@ -134,14 +165,6 @@ export default function AdminDashboard() {
             <svg className="w-4 h-4 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
               <path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z"/>
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z" clipRule="evenodd"/>
-            </svg>
-          </div>
-        )
-      case 'writer_banned':
-        return (
-          <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-            <svg className="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd"/>
             </svg>
           </div>
         )
@@ -210,6 +233,12 @@ export default function AdminDashboard() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
           <p className="text-gray-600">Welcome back, {session?.user?.name}! Here's what's happening today.</p>
+          <button
+            onClick={fetchDashboardData}
+            className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium"
+          >
+            ↻ Refresh Data
+          </button>
         </div>
 
         {/* Stats Grid */}
@@ -222,8 +251,11 @@ export default function AdminDashboard() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{stats.totalUsers.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.totalUsers?.toLocaleString() || '0'}</p>
                 <p className="text-gray-600 text-sm">Total Users</p>
+                {stats.userGrowthRate > 0 && (
+                  <p className="text-xs text-green-600">+{stats.userGrowthRate}% growth</p>
+                )}
               </div>
             </div>
           </div>
@@ -236,8 +268,11 @@ export default function AdminDashboard() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{stats.totalWriters}</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.totalWriters || '0'}</p>
                 <p className="text-gray-600 text-sm">Active Writers</p>
+                {stats.writerGrowthRate > 0 && (
+                  <p className="text-xs text-green-600">+{stats.writerGrowthRate}% growth</p>
+                )}
               </div>
             </div>
           </div>
@@ -250,8 +285,9 @@ export default function AdminDashboard() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{stats.totalChapters.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.totalChapters?.toLocaleString() || '0'}</p>
                 <p className="text-gray-600 text-sm">Total Chapters</p>
+                <p className="text-xs text-gray-500">{stats.completionRate}% completion rate</p>
               </div>
             </div>
           </div>
@@ -265,8 +301,11 @@ export default function AdminDashboard() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.totalRevenue)}</p>
+                <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.totalRevenue || 0)}</p>
                 <p className="text-gray-600 text-sm">Total Revenue</p>
+                {stats.revenueGrowthRate > 0 && (
+                  <p className="text-xs text-green-600">+{stats.revenueGrowthRate}% growth</p>
+                )}
               </div>
             </div>
           </div>
@@ -279,7 +318,7 @@ export default function AdminDashboard() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{stats.pendingApprovals}</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.pendingApprovals || '0'}</p>
                 <p className="text-gray-600 text-sm">Pending Approvals</p>
               </div>
             </div>
@@ -293,7 +332,7 @@ export default function AdminDashboard() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{stats.activeProjects}</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.activeProjects || '0'}</p>
                 <p className="text-gray-600 text-sm">Active Projects</p>
               </div>
             </div>
@@ -307,7 +346,7 @@ export default function AdminDashboard() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{stats.completedProjects.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.completedProjects?.toLocaleString() || '0'}</p>
                 <p className="text-gray-600 text-sm">Completed</p>
               </div>
             </div>
@@ -321,7 +360,7 @@ export default function AdminDashboard() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{stats.overdueProjects}</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.overdueProjects || '0'}</p>
                 <p className="text-gray-600 text-sm">Overdue</p>
               </div>
             </div>
@@ -388,15 +427,19 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Activity</h3>
             <div className="space-y-4 max-h-80 overflow-y-auto">
-              {recentActivity.map((activity) => (
-                <div key={activity.id} className="flex items-start space-x-3">
-                  {getActivityIcon(activity.type)}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-900">{activity.message}</p>
-                    <p className="text-xs text-gray-500">{formatRelativeTime(activity.timestamp)}</p>
+              {recentActivity.length > 0 ? (
+                recentActivity.map((activity) => (
+                  <div key={activity.id} className="flex items-start space-x-3">
+                    {getActivityIcon(activity.type)}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-900">{activity.message}</p>
+                      <p className="text-xs text-gray-500">{formatRelativeTime(activity.timestamp)}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <p className="text-gray-500 text-sm">No recent activity</p>
+              )}
             </div>
           </div>
         </div>
@@ -439,7 +482,7 @@ export default function AdminDashboard() {
                   </p>
                 </div>
                 <button
-                  onClick={() => router.push('/admin/dashboard/chapters?filter=overdue')}
+                  onClick={() => router.push('/admin/dashboard/chapters?status=overdue')}
                   className="text-sm text-red-700 hover:text-red-900 font-medium"
                 >
                   View
@@ -447,18 +490,21 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            <div className="flex items-center p-4 bg-green-50 border border-green-200 rounded-lg">
-              <div className="w-6 h-6 text-green-600 mr-3">
-                <svg fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
-                </svg>
+            {(!stats.pendingApprovals || stats.pendingApprovals === 0) && 
+             (!stats.overdueProjects || stats.overdueProjects === 0) && (
+              <div className="flex items-center p-4 bg-green-50 border border-green-200 rounded-lg">
+                <div className="w-6 h-6 text-green-600 mr-3">
+                  <svg fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-green-800">
+                    System is running smoothly. All services operational.
+                  </p>
+                </div>
               </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-green-800">
-                  System is running smoothly. All services operational.
-                </p>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
