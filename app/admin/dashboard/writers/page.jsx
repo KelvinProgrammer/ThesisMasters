@@ -20,6 +20,8 @@ export default function WritersManagement() {
   const [showModal, setShowModal] = useState(false)
   const [modalType, setModalType] = useState('') // 'approve', 'ban', 'promote', 'view'
   const [actionReason, setActionReason] = useState('')
+  const [statistics, setStatistics] = useState({})
+  const [actionLoading, setActionLoading] = useState(false)
 
   useEffect(() => {
     if (status === 'loading') return
@@ -33,184 +35,161 @@ export default function WritersManagement() {
     }
 
     fetchWriters()
-  }, [status, session, router])
+  }, [status, session, router, filterStatus, searchTerm])
 
   const fetchWriters = async () => {
     try {
-      // Mock data - replace with actual API call
-      const mockWriters = [
-        {
-          _id: '1',
-          name: 'Dr. Sarah Wilson',
-          email: 'sarah.wilson@example.com',
-          role: 'writer',
-          emailVerified: true,
-          createdAt: new Date('2024-01-15'),
-          writerProfile: {
-            specializations: ['academic_writing', 'research', 'methodology'],
-            yearsExperience: 8,
-            education: {
-              level: 'phd',
-              field: 'Psychology',
-              institution: 'University of Nairobi'
-            },
-            rating: 4.8,
-            totalProjects: 45,
-            completedProjects: 43,
-            isVerified: false,
-            availability: 'available'
-          },
-          adminProfile: null
-        },
-        {
-          _id: '2',
-          name: 'Prof. Michael Chen',
-          email: 'michael.chen@example.com',
-          role: 'writer',
-          emailVerified: true,
-          createdAt: new Date('2023-11-20'),
-          writerProfile: {
-            specializations: ['statistics', 'data_analysis', 'research'],
-            yearsExperience: 12,
-            education: {
-              level: 'phd',
-              field: 'Statistics',
-              institution: 'Kenyatta University'
-            },
-            rating: 4.9,
-            totalProjects: 78,
-            completedProjects: 76,
-            isVerified: true,
-            availability: 'available'
-          },
-          adminProfile: null
-        },
-        {
-          _id: '3',
-          name: 'Dr. Alice Johnson',
-          email: 'alice.johnson@example.com',
-          role: 'writer',
-          emailVerified: true,
-          createdAt: new Date('2024-02-10'),
-          writerProfile: {
-            specializations: ['literature_review', 'academic_writing'],
-            yearsExperience: 6,
-            education: {
-              level: 'masters',
-              field: 'English Literature',
-              institution: 'Moi University'
-            },
-            rating: 4.6,
-            totalProjects: 32,
-            completedProjects: 29,
-            isVerified: true,
-            availability: 'busy'
-          },
-          adminProfile: null
-        },
-        {
-          _id: '4',
-          name: 'John Smith',
-          email: 'john.smith@example.com',
-          role: 'writer',
-          emailVerified: false,
-          createdAt: new Date('2024-03-01'),
-          writerProfile: {
-            specializations: ['academic_writing'],
-            yearsExperience: 3,
-            education: {
-              level: 'masters',
-              field: 'Business Administration',
-              institution: 'Strathmore University'
-            },
-            rating: 0,
-            totalProjects: 0,
-            completedProjects: 0,
-            isVerified: false,
-            availability: 'available'
-          },
-          adminProfile: null
-        },
-        {
-          _id: '5',
-          name: 'Dr. Maria Rodriguez',
-          email: 'maria.rodriguez@example.com',
-          role: 'writer',
-          emailVerified: true,
-          createdAt: new Date('2023-09-12'),
-          writerProfile: {
-            specializations: ['research', 'methodology', 'statistics'],
-            yearsExperience: 10,
-            education: {
-              level: 'phd',
-              field: 'Economics',
-              institution: 'University of Nairobi'
-            },
-            rating: 4.7,
-            totalProjects: 56,
-            completedProjects: 53,
-            isVerified: true,
-            availability: 'unavailable'
-          },
-          adminProfile: null
-        }
-      ]
+      setLoading(true)
+      
+      // Build query parameters
+      const params = new URLSearchParams({
+        role: 'writer',
+        limit: '100', // Get more writers for better filtering
+        sortBy: 'createdAt',
+        sortOrder: 'desc'
+      })
 
-      setWriters(mockWriters)
+      if (searchTerm) {
+        params.append('search', searchTerm)
+      }
+
+      // Map filter status to API parameters
+      if (filterStatus !== 'all') {
+        switch (filterStatus) {
+          case 'pending':
+            params.append('verified', 'false')
+            params.append('status', 'active')
+            break
+          case 'verified':
+            params.append('verified', 'true')
+            params.append('status', 'active')
+            break
+          case 'banned':
+            params.append('status', 'banned')
+            break
+          case 'active':
+            params.append('status', 'active')
+            params.append('verified', 'true')
+            break
+        }
+      }
+
+      const response = await fetch(`/api/admin/users?${params.toString()}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Failed to fetch writers')
+      }
+
+      const data = await response.json()
+      
+      // Transform API data to match component expectations
+      const transformedWriters = data.users.map(user => ({
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        emailVerified: user.emailVerified,
+        createdAt: new Date(user.createdAt),
+        writerProfile: {
+          specializations: user.writerProfile?.specializations || [],
+          yearsExperience: user.writerProfile?.yearsExperience || 0,
+          education: user.writerProfile?.education || {
+            level: 'bachelors',
+            field: 'Unknown',
+            institution: 'Unknown'
+          },
+          rating: user.writerProfile?.rating || 0,
+          totalProjects: user.chapterStats?.totalChapters || 0,
+          completedProjects: user.chapterStats?.completedChapters || 0,
+          isVerified: user.writerProfile?.isVerified || false,
+          availability: user.isBanned ? 'unavailable' : 
+                       user.writerProfile?.availability || 'available'
+        },
+        adminProfile: user.adminProfile || null,
+        isBanned: user.isBanned || false
+      }))
+
+      setWriters(transformedWriters)
+      setStatistics(data.statistics || {})
     } catch (err) {
-      setError('Failed to fetch writers')
+      console.error('Fetch writers error:', err)
+      setError(err.message || 'Failed to fetch writers')
     } finally {
       setLoading(false)
     }
   }
 
   const handleWriterAction = async (action, writerId, reason = '') => {
+    if (actionLoading) return
+    
     try {
-      // Mock API call - replace with actual implementation
-      console.log(`${action} writer ${writerId}:`, reason)
+      setActionLoading(true)
       
-      // Update local state
-      setWriters(prev => prev.map(writer => {
-        if (writer._id === writerId) {
-          switch (action) {
-            case 'approve':
-              return {
-                ...writer,
-                writerProfile: { ...writer.writerProfile, isVerified: true }
-              }
-            case 'ban':
-              return {
-                ...writer,
-                writerProfile: { ...writer.writerProfile, availability: 'unavailable', isVerified: false }
-              }
-            case 'activate':
-              return {
-                ...writer,
-                writerProfile: { ...writer.writerProfile, availability: 'available' }
-              }
-            case 'promote':
-              return {
-                ...writer,
-                role: 'admin',
-                adminProfile: {
-                  permissions: ['writer_management'],
-                  department: 'operations',
-                  accessLevel: 'junior'
-                }
-              }
-            default:
-              return writer
-          }
-        }
-        return writer
-      }))
+      // Map component actions to API actions
+      let apiAction = action
+      let actionData = {}
 
-      setSuccess(`Writer ${action === 'approve' ? 'approved' : action === 'ban' ? 'banned' : action === 'promote' ? 'promoted to admin' : 'updated'} successfully`)
+      switch (action) {
+        case 'approve':
+          apiAction = 'verify_writer'
+          actionData = { reason }
+          break
+        case 'ban':
+          apiAction = 'ban'
+          actionData = { reason }
+          break
+        case 'activate':
+          apiAction = 'unban'
+          break
+        case 'promote':
+          apiAction = 'change_role'
+          actionData = { newRole: 'admin', reason }
+          break
+        default:
+          throw new Error('Invalid action')
+      }
+
+      const response = await fetch('/api/admin/users', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: writerId,
+          action: apiAction,
+          data: actionData
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || `Failed to ${action} writer`)
+      }
+
+      const result = await response.json()
+      
+      // Show success message
+      setSuccess(result.message || `Writer ${action === 'approve' ? 'approved' : action === 'ban' ? 'banned' : action === 'promote' ? 'promoted to admin' : 'updated'} successfully`)
+      
+      // Close modal
       setShowModal(false)
       setSelectedWriter(null)
       setActionReason('')
+      
+      // Refresh writers list
+      await fetchWriters()
+
     } catch (err) {
-      setError(`Failed to ${action} writer`)
+      console.error('Writer action error:', err)
+      setError(err.message || `Failed to ${action} writer`)
+    } finally {
+      setActionLoading(false)
     }
   }
 
@@ -222,14 +201,14 @@ export default function WritersManagement() {
   }
 
   const getStatusBadge = (writer) => {
+    if (writer.isBanned) {
+      return <span className="px-2 py-1 bg-gray-100 text-gray-800 text-xs font-medium rounded-full">Banned</span>
+    }
     if (!writer.writerProfile.isVerified && writer.writerProfile.totalProjects === 0) {
       return <span className="px-2 py-1 bg-orange-100 text-orange-800 text-xs font-medium rounded-full">Pending Approval</span>
     }
     if (!writer.writerProfile.isVerified) {
       return <span className="px-2 py-1 bg-red-100 text-red-800 text-xs font-medium rounded-full">Not Verified</span>
-    }
-    if (writer.writerProfile.availability === 'unavailable') {
-      return <span className="px-2 py-1 bg-gray-100 text-gray-800 text-xs font-medium rounded-full">Banned</span>
     }
     if (writer.writerProfile.availability === 'busy') {
       return <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-medium rounded-full">Busy</span>
@@ -237,8 +216,10 @@ export default function WritersManagement() {
     return <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">Active</span>
   }
 
-  const getAvailabilityColor = (availability) => {
-    switch (availability) {
+  const getAvailabilityColor = (writer) => {
+    if (writer.isBanned) return 'text-red-600'
+    
+    switch (writer.writerProfile.availability) {
       case 'available': return 'text-green-600'
       case 'busy': return 'text-yellow-600'
       case 'unavailable': return 'text-red-600'
@@ -246,20 +227,15 @@ export default function WritersManagement() {
     }
   }
 
-  // Filter writers based on status and search term
+  // Filter writers based on status and search term (client-side for fine-grained control)
   const filteredWriters = writers.filter(writer => {
     const matchesStatus = filterStatus === 'all' || 
       (filterStatus === 'pending' && !writer.writerProfile.isVerified && writer.writerProfile.totalProjects === 0) ||
-      (filterStatus === 'verified' && writer.writerProfile.isVerified) ||
-      (filterStatus === 'banned' && writer.writerProfile.availability === 'unavailable') ||
-      (filterStatus === 'active' && writer.writerProfile.isVerified && writer.writerProfile.availability !== 'unavailable')
+      (filterStatus === 'verified' && writer.writerProfile.isVerified && !writer.isBanned) ||
+      (filterStatus === 'banned' && writer.isBanned) ||
+      (filterStatus === 'active' && writer.writerProfile.isVerified && !writer.isBanned)
 
-    const matchesSearch = !searchTerm || 
-      writer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      writer.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      writer.writerProfile.specializations.some(spec => spec.toLowerCase().includes(searchTerm.toLowerCase()))
-
-    return matchesStatus && matchesSearch
+    return matchesStatus
   })
 
   if (loading) {
@@ -278,6 +254,12 @@ export default function WritersManagement() {
       </AdminDashboardLayout>
     )
   }
+
+  // Calculate stats from filtered writers
+  const totalWriters = writers.length
+  const verifiedWriters = writers.filter(w => w.writerProfile.isVerified && !w.isBanned).length
+  const pendingWriters = writers.filter(w => !w.writerProfile.isVerified && w.writerProfile.totalProjects === 0 && !w.isBanned).length
+  const bannedWriters = writers.filter(w => w.isBanned).length
 
   return (
     <AdminDashboardLayout>
@@ -316,7 +298,7 @@ export default function WritersManagement() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{writers.length}</p>
+                <p className="text-2xl font-bold text-gray-900">{totalWriters}</p>
                 <p className="text-gray-600 text-sm">Total Writers</p>
               </div>
             </div>
@@ -330,9 +312,7 @@ export default function WritersManagement() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">
-                  {writers.filter(w => w.writerProfile.isVerified).length}
-                </p>
+                <p className="text-2xl font-bold text-gray-900">{verifiedWriters}</p>
                 <p className="text-gray-600 text-sm">Verified</p>
               </div>
             </div>
@@ -346,9 +326,7 @@ export default function WritersManagement() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">
-                  {writers.filter(w => !w.writerProfile.isVerified && w.writerProfile.totalProjects === 0).length}
-                </p>
+                <p className="text-2xl font-bold text-gray-900">{pendingWriters}</p>
                 <p className="text-gray-600 text-sm">Pending</p>
               </div>
             </div>
@@ -362,9 +340,7 @@ export default function WritersManagement() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">
-                  {writers.filter(w => w.writerProfile.availability === 'unavailable').length}
-                </p>
+                <p className="text-2xl font-bold text-gray-900">{bannedWriters}</p>
                 <p className="text-gray-600 text-sm">Banned</p>
               </div>
             </div>
@@ -481,8 +457,8 @@ export default function WritersManagement() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="space-y-1">
                           {getStatusBadge(writer)}
-                          <div className={`text-xs font-medium capitalize ${getAvailabilityColor(writer.writerProfile.availability)}`}>
-                            {writer.writerProfile.availability}
+                          <div className={`text-xs font-medium capitalize ${getAvailabilityColor(writer)}`}>
+                            {writer.isBanned ? 'banned' : writer.writerProfile.availability}
                           </div>
                         </div>
                       </td>
@@ -502,11 +478,12 @@ export default function WritersManagement() {
                             </svg>
                           </button>
 
-                          {!writer.writerProfile.isVerified && writer.writerProfile.totalProjects === 0 && (
+                          {!writer.writerProfile.isVerified && writer.writerProfile.totalProjects === 0 && !writer.isBanned && (
                             <button
                               onClick={() => openModal('approve', writer)}
                               className="text-green-600 hover:text-green-900"
                               title="Approve Writer"
+                              disabled={actionLoading}
                             >
                               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
@@ -514,11 +491,12 @@ export default function WritersManagement() {
                             </button>
                           )}
 
-                          {writer.writerProfile.availability !== 'unavailable' && (
+                          {!writer.isBanned && (
                             <button
                               onClick={() => openModal('ban', writer)}
                               className="text-red-600 hover:text-red-900"
                               title="Ban Writer"
+                              disabled={actionLoading}
                             >
                               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd"/>
@@ -526,11 +504,12 @@ export default function WritersManagement() {
                             </button>
                           )}
 
-                          {writer.writerProfile.availability === 'unavailable' && (
+                          {writer.isBanned && (
                             <button
                               onClick={() => handleWriterAction('activate', writer._id)}
                               className="text-green-600 hover:text-green-900"
                               title="Activate Writer"
+                              disabled={actionLoading}
                             >
                               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.293l-3-3a1 1 0 00-1.414 1.414L10.586 9.5 9.293 10.793a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414z" clipRule="evenodd"/>
@@ -538,11 +517,12 @@ export default function WritersManagement() {
                             </button>
                           )}
 
-                          {writer.role === 'writer' && writer.writerProfile.isVerified && (
+                          {writer.role === 'writer' && writer.writerProfile.isVerified && !writer.isBanned && (
                             <button
                               onClick={() => openModal('promote', writer)}
                               className="text-purple-600 hover:text-purple-900"
                               title="Promote to Admin"
+                              disabled={actionLoading}
                             >
                               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd"/>
@@ -584,6 +564,7 @@ export default function WritersManagement() {
                   <button
                     onClick={() => setShowModal(false)}
                     className="text-gray-400 hover:text-gray-600"
+                    disabled={actionLoading}
                   >
                     <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"/>
@@ -642,6 +623,7 @@ export default function WritersManagement() {
                         rows={3}
                         placeholder={`Enter reason for ${modalType}...`}
                         required={modalType !== 'approve'}
+                        disabled={actionLoading}
                       />
                     </div>
                   )}
@@ -652,6 +634,7 @@ export default function WritersManagement() {
                       <button
                         onClick={() => setShowModal(false)}
                         className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg font-semibold hover:bg-gray-200 transition-colors"
+                        disabled={actionLoading}
                       >
                         Close
                       </button>
@@ -659,18 +642,19 @@ export default function WritersManagement() {
                       <>
                         <button
                           onClick={() => handleWriterAction(modalType, selectedWriter._id, actionReason)}
-                          className={`flex-1 text-white py-2 px-4 rounded-lg font-semibold transition-colors ${
+                          className={`flex-1 text-white py-2 px-4 rounded-lg font-semibold transition-colors disabled:opacity-50 ${
                             modalType === 'approve' ? 'bg-green-600 hover:bg-green-700' :
                             modalType === 'ban' ? 'bg-red-600 hover:bg-red-700' :
                             'bg-purple-600 hover:bg-purple-700'
                           }`}
-                          disabled={modalType !== 'approve' && !actionReason.trim()}
+                          disabled={actionLoading || (modalType !== 'approve' && !actionReason.trim())}
                         >
-                          Confirm {modalType.charAt(0).toUpperCase() + modalType.slice(1)}
+                          {actionLoading ? 'Processing...' : `Confirm ${modalType.charAt(0).toUpperCase() + modalType.slice(1)}`}
                         </button>
                         <button
                           onClick={() => setShowModal(false)}
-                          className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg font-semibold hover:bg-gray-200 transition-colors"
+                          className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50"
+                          disabled={actionLoading}
                         >
                           Cancel
                         </button>
