@@ -10,7 +10,7 @@ const navigation = [
   { name: 'Dashboard', href: '/writer/dashboard', icon: 'home' },
   { name: 'Current Chapters', href: '/writer/dashboard/currentchapters', icon: 'book-open' },
   { name: 'Accepted Chapters', href: '/writer/dashboard/acceptedchapters', icon: 'check-circle' },
-  { name: 'Completed Chapters', href: '/writer/dashboard/completedchapters', icon: 'check' },
+  { name: 'Completed Chapters', href: '/writer/dashboard/completed', icon: 'check' },
   { name: 'Paid Chapters', href: '/writer/dashboard/paidchapters', icon: 'dollar' },
   { name: 'Billing & Payments', href: '/writer/dashboard/billing', icon: 'credit-card' },
   { name: 'Profile', href: '/writer/dashboard/profile', icon: 'user' },

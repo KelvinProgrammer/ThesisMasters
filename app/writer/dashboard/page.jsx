@@ -1,9 +1,11 @@
-// app/writer/dashboard/page.jsx
+// app/writer/dashboard/page.jsx - Updated Writer Dashboard
 'use client'
 
 import { useState, useEffect } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import WriterDashboardLayout from '@/components/WriterDashboardLayout'
+import Alert from '@/components/Alert'
 import Link from 'next/link'
 
 export default function WriterDashboard() {
@@ -12,12 +14,13 @@ export default function WriterDashboard() {
   const [stats, setStats] = useState({
     totalProjects: 0,
     completedProjects: 0,
-    activeProjects: 0,
-    earnings: 0,
-    rating: 0
+    inProgressProjects: 0,
+    totalEarnings: 0,
+    avgRating: 0
   })
-  const [recentProjects, setRecentProjects] = useState([])
+  const [recentChapters, setRecentChapters] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     if (status === 'loading') return
@@ -27,8 +30,9 @@ export default function WriterDashboard() {
       return
     }
 
-    if (!session.user.isVerified) {
-      // Writer not yet approved by admin
+    if (!session.user.writerProfile?.isVerified) {
+      // Writer not yet approved by admin - handle in layout
+      setLoading(false)
       return
     }
 
@@ -37,44 +41,22 @@ export default function WriterDashboard() {
 
   const fetchWriterData = async () => {
     try {
-      // In a real app, these would be actual API calls
-      // For now, using mock data
-      setStats({
-        totalProjects: session?.user?.writerProfile?.totalProjects || 0,
-        completedProjects: session?.user?.writerProfile?.completedProjects || 0,
-        activeProjects: 3,
-        earnings: 25000,
-        rating: session?.user?.writerProfile?.rating || 0
-      })
+      // Fetch writer profile and statistics
+      const profileResponse = await fetch('/api/writer/profile')
+      if (profileResponse.ok) {
+        const profileData = await profileResponse.json()
+        setStats(profileData.statistics || {})
+      }
 
-      setRecentProjects([
-        {
-          id: 1,
-          title: 'Research Methodology Chapter',
-          student: 'John Doe',
-          status: 'in_progress',
-          deadline: '2024-09-15',
-          payment: 1200
-        },
-        {
-          id: 2,
-          title: 'Literature Review',
-          student: 'Jane Smith',
-          status: 'completed',
-          deadline: '2024-09-10',
-          payment: 800
-        },
-        {
-          id: 3,
-          title: 'Data Analysis Chapter',
-          student: 'Mike Johnson',
-          status: 'revision',
-          deadline: '2024-09-20',
-          payment: 1500
-        }
-      ])
+      // Fetch recent chapters
+      const chaptersResponse = await fetch('/api/writer/chapters?limit=5&sortBy=updatedAt&sortOrder=desc')
+      if (chaptersResponse.ok) {
+        const chaptersData = await chaptersResponse.json()
+        setRecentChapters(chaptersData.chapters || [])
+      }
     } catch (error) {
       console.error('Error fetching writer data:', error)
+      setError('Failed to load dashboard data')
     } finally {
       setLoading(false)
     }
@@ -88,6 +70,8 @@ export default function WriterDashboard() {
         return 'bg-blue-100 text-blue-800'
       case 'revision':
         return 'bg-yellow-100 text-yellow-800'
+      case 'draft':
+        return 'bg-gray-100 text-gray-800'
       default:
         return 'bg-gray-100 text-gray-800'
     }
@@ -97,21 +81,28 @@ export default function WriterDashboard() {
     return new Intl.NumberFormat('en-KE', {
       style: 'currency',
       currency: 'KES'
-    }).format(amount)
+    }).format(amount || 0)
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-green-200 border-t-green-600 rounded-full animate-spin mx-auto mb-4"></div>
-          <h2 className="text-xl font-semibold text-gray-900">Loading your dashboard...</h2>
+      <WriterDashboardLayout>
+        <div className="p-6">
+          <div className="animate-pulse space-y-6">
+            <div className="h-8 bg-gray-200 rounded w-1/3"></div>
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="h-24 bg-gray-200 rounded-lg"></div>
+              ))}
+            </div>
+            <div className="h-64 bg-gray-200 rounded-lg"></div>
+          </div>
         </div>
-      </div>
+      </WriterDashboardLayout>
     )
   }
 
-  if (!session?.user?.isVerified) {
+  if (!session?.user?.writerProfile?.isVerified) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full text-center">
@@ -142,49 +133,73 @@ export default function WriterDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center">
-              <Link href="/" className="flex items-center">
-                <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center mr-3">
-                  <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"/>
-                  </svg>
-                </div>
-                <span className="text-xl font-bold text-gray-900">ThesisMaster Writer</span>
-              </Link>
-            </div>
-            
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-700">Welcome, {session?.user?.name}</span>
-              <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                  <span className="text-green-600 font-semibold text-sm">
-                    {session?.user?.name?.charAt(0).toUpperCase()}
-                  </span>
-                </div>
-                <button
-                  onClick={() => signOut({ callbackUrl: '/writer/login' })}
-                  className="text-sm text-gray-600 hover:text-gray-900 px-3 py-1 rounded-md hover:bg-gray-100 transition-colors"
-                >
-                  Sign out
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
+    <WriterDashboardLayout>
+      <div className="p-4 sm:p-6 lg:p-8">
+        {/* Alerts */}
+        {error && (
+          <Alert 
+            type="error" 
+            message={error} 
+            onClose={() => setError('')} 
+            className="mb-6"
+          />
+        )}
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Writer Dashboard</h1>
           <p className="text-gray-600">
-            Manage your writing projects and track your performance
+            Welcome back, {session?.user?.name}! Manage your writing projects and track your performance.
           </p>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <Link
+            href="/writer/dashboard/currentchapters?status=available"
+            className="bg-green-600 text-white p-6 rounded-lg hover:bg-green-700 transition-colors"
+          >
+            <div className="flex items-center">
+              <svg className="w-8 h-8 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd"/>
+              </svg>
+              <div>
+                <h3 className="font-semibold">Browse Projects</h3>
+                <p className="text-sm opacity-90">Find new writing opportunities</p>
+              </div>
+            </div>
+          </Link>
+
+          <Link
+            href="/writer/dashboard/currentchapters"
+            className="bg-blue-600 text-white p-6 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <div className="flex items-center">
+              <svg className="w-8 h-8 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.379-8.379-2.828-2.828z"/>
+              </svg>
+              <div>
+                <h3 className="font-semibold">Continue Writing</h3>
+                <p className="text-sm opacity-90">Work on current chapters</p>
+              </div>
+            </div>
+          </Link>
+
+          <Link
+            href="/writer/dashboard/billing"
+            className="bg-purple-600 text-white p-6 rounded-lg hover:bg-purple-700 transition-colors"
+          >
+            <div className="flex items-center">
+              <svg className="w-8 h-8 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z"/>
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z" clipRule="evenodd"/>
+              </svg>
+              <div>
+                <h3 className="font-semibold">View Earnings</h3>
+                <p className="text-sm opacity-90">Check payments & billing</p>
+              </div>
+            </div>
+          </Link>
         </div>
 
         {/* Stats Grid */}
@@ -192,13 +207,13 @@ export default function WriterDashboard() {
           <div className="bg-white p-6 rounded-lg shadow-sm border">
             <div className="flex items-center">
               <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                <svg className="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"/>
                 </svg>
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Total Projects</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.totalProjects}</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.totalProjects || 0}</p>
               </div>
             </div>
           </div>
@@ -206,13 +221,13 @@ export default function WriterDashboard() {
           <div className="bg-white p-6 rounded-lg shadow-sm border">
             <div className="flex items-center">
               <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                <svg className="w-6 h-6 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
                 </svg>
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Completed</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.completedProjects}</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.completedProjects || 0}</p>
               </div>
             </div>
           </div>
@@ -220,13 +235,13 @@ export default function WriterDashboard() {
           <div className="bg-white p-6 rounded-lg shadow-sm border">
             <div className="flex items-center">
               <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                <svg className="w-6 h-6 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd"/>
                 </svg>
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Active</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.activeProjects}</p>
+                <p className="text-sm font-medium text-gray-600">In Progress</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.inProgressProjects || 0}</p>
               </div>
             </div>
           </div>
@@ -234,13 +249,14 @@ export default function WriterDashboard() {
           <div className="bg-white p-6 rounded-lg shadow-sm border">
             <div className="flex items-center">
               <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"/>
+                <svg className="w-6 h-6 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z"/>
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z" clipRule="evenodd"/>
                 </svg>
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Earnings</p>
-                <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.earnings)}</p>
+                <p className="text-sm font-medium text-gray-600">Total Earnings</p>
+                <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.totalEarnings)}</p>
               </div>
             </div>
           </div>
@@ -248,14 +264,14 @@ export default function WriterDashboard() {
           <div className="bg-white p-6 rounded-lg shadow-sm border">
             <div className="flex items-center">
               <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+                <svg className="w-6 h-6 text-orange-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
                 </svg>
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Rating</p>
+                <p className="text-sm font-medium text-gray-600">Average Rating</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {stats.rating > 0 ? stats.rating.toFixed(1) : 'N/A'}
+                  {stats.avgRating > 0 ? stats.avgRating.toFixed(1) : 'N/A'}
                 </p>
               </div>
             </div>
@@ -268,7 +284,7 @@ export default function WriterDashboard() {
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-semibold text-gray-900">Recent Projects</h2>
               <Link 
-                href="/writer/projects" 
+                href="/writer/dashboard/currentchapters" 
                 className="text-sm text-green-600 hover:text-green-500 font-medium"
               >
                 View all projects →
@@ -277,15 +293,15 @@ export default function WriterDashboard() {
           </div>
           
           <div className="p-6">
-            {recentProjects.length === 0 ? (
+            {recentChapters.length === 0 ? (
               <div className="text-center py-8">
-                <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"/>
                 </svg>
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No projects yet</h3>
-                <p className="text-gray-600 mb-4">You haven't been assigned any projects yet.</p>
+                <p className="text-gray-600 mb-4">Start by browsing available projects or wait for assignments.</p>
                 <Link 
-                  href="/writer/browse-projects" 
+                  href="/writer/dashboard/currentchapters?status=available" 
                   className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                 >
                   Browse Available Projects
@@ -296,33 +312,46 @@ export default function WriterDashboard() {
                 <table className="w-full">
                   <thead>
                     <tr className="text-left text-sm font-medium text-gray-500 border-b">
-                      <th className="pb-3">Project</th>
+                      <th className="pb-3">Chapter</th>
                       <th className="pb-3">Student</th>
                       <th className="pb-3">Status</th>
-                      <th className="pb-3">Deadline</th>
-                      <th className="pb-3">Payment</th>
+                      <th className="pb-3">Words</th>
+                      <th className="pb-3">Earnings</th>
+                      <th className="pb-3">Updated</th>
                       <th className="pb-3">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {recentProjects.map((project) => (
-                      <tr key={project.id} className="text-sm">
-                        <td className="py-4 font-medium text-gray-900">{project.title}</td>
-                        <td className="py-4 text-gray-600">{project.student}</td>
+                    {recentChapters.map((chapter) => (
+                      <tr key={chapter._id} className="text-sm">
                         <td className="py-4">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
-                            {project.status.replace('_', ' ')}
+                          <div>
+                            <div className="font-medium text-gray-900">
+                              Chapter {chapter.chapterNumber}: {chapter.title}
+                            </div>
+                            <div className="text-gray-500">
+                              {chapter.level?.toUpperCase()} • {chapter.workType?.replace('_', ' ')}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-4 text-gray-600">{chapter.user?.name || 'Unknown'}</td>
+                        <td className="py-4">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(chapter.status)}`}>
+                            {chapter.status.replace('_', ' ')}
                           </span>
                         </td>
                         <td className="py-4 text-gray-600">
-                          {new Date(project.deadline).toLocaleDateString()}
+                          {chapter.wordCount?.toLocaleString() || 0}
                         </td>
                         <td className="py-4 font-medium text-gray-900">
-                          {formatCurrency(project.payment)}
+                          {formatCurrency(chapter.earnings || 0)}
+                        </td>
+                        <td className="py-4 text-gray-600">
+                          {new Date(chapter.updatedAt).toLocaleDateString()}
                         </td>
                         <td className="py-4">
                           <Link 
-                            href={`/writer/projects/${project.id}`}
+                            href={`/writer/dashboard/currentchapters`}
                             className="text-green-600 hover:text-green-500 font-medium"
                           >
                             View →
@@ -337,6 +366,6 @@ export default function WriterDashboard() {
           </div>
         </div>
       </div>
-    </div>
+    </WriterDashboardLayout>
   )
 }
