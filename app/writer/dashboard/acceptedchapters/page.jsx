@@ -1,4 +1,4 @@
-// app/writer/dashboard/acceptedchapters/page.jsx - Writer Accepted Chapters
+// app/writer/dashboard/acceptedchapters/page.jsx - Enhanced Writer Accepted Chapters
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -17,8 +17,11 @@ export default function WriterAcceptedChapters() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [filterStatus, setFilterStatus] = useState('all')
   const [selectedChapter, setSelectedChapter] = useState(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
+  const [showContentModal, setShowContentModal] = useState(false)
+  const [contentForm, setContentForm] = useState({ content: '', notes: '', changes: '' })
   const [updating, setUpdating] = useState(false)
 
   useEffect(() => {
@@ -33,12 +36,21 @@ export default function WriterAcceptedChapters() {
     }
 
     fetchAcceptedChapters()
-  }, [status, session, router])
+  }, [status, session, router, filterStatus])
 
   const fetchAcceptedChapters = async () => {
     try {
+      setLoading(true)
+      setError('')
+
+      // Build status filter for accepted chapters
+      let statusFilter = 'accepted' // This will get all assigned chapters
+      if (filterStatus !== 'all') {
+        statusFilter = filterStatus
+      }
+
       const params = new URLSearchParams({
-        status: 'in_progress,revision',
+        status: statusFilter,
         limit: '50',
         sortBy: 'updatedAt',
         sortOrder: 'desc'
@@ -51,7 +63,12 @@ export default function WriterAcceptedChapters() {
         throw new Error(data.message || 'Failed to fetch chapters')
       }
 
-      setChapters(data.chapters || [])
+      // Filter to only show chapters assigned to this writer
+      const assignedChapters = (data.chapters || []).filter(chapter => 
+        chapter.writerId && chapter.writerId.toString() === session.user.id
+      )
+
+      setChapters(assignedChapters)
       setStatistics(data.statistics || {})
     } catch (err) {
       setError(err.message)
@@ -60,33 +77,8 @@ export default function WriterAcceptedChapters() {
     }
   }
 
-  const handleStartWorking = async (chapterId) => {
-    try {
-      setUpdating(true)
-      const response = await fetch('/api/writer/chapters', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chapterId,
-          action: 'update_status',
-          data: { status: 'in_progress' }
-        })
-      })
-
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.message)
-
-      setSuccess('Started working on chapter!')
-      fetchAcceptedChapters()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setUpdating(false)
-    }
-  }
-
-  const handleMarkComplete = async (chapterId) => {
-    if (!confirm('Are you sure you want to mark this chapter as complete? This will notify the student.')) {
+  const handleStatusChange = async (chapterId, newStatus) => {
+    if (newStatus === 'completed' && !confirm('Are you sure you want to mark this chapter as completed? This will notify the student and admin.')) {
       return
     }
 
@@ -98,14 +90,42 @@ export default function WriterAcceptedChapters() {
         body: JSON.stringify({
           chapterId,
           action: 'update_status',
-          data: { status: 'completed' }
+          data: { status: newStatus }
         })
       })
 
       const data = await response.json()
       if (!response.ok) throw new Error(data.message)
 
-      setSuccess('Chapter marked as complete!')
+      setSuccess(`Chapter marked as ${newStatus.replace('_', ' ')}!`)
+      fetchAcceptedChapters()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  const handleContentSubmit = async (e) => {
+    e.preventDefault()
+    try {
+      setUpdating(true)
+      const response = await fetch('/api/writer/chapters', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chapterId: selectedChapter._id,
+          action: 'add_content',
+          data: contentForm
+        })
+      })
+
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.message)
+
+      setSuccess('Content updated successfully!')
+      setShowContentModal(false)
+      setContentForm({ content: '', notes: '', changes: '' })
       fetchAcceptedChapters()
     } catch (err) {
       setError(err.message)
@@ -119,10 +139,22 @@ export default function WriterAcceptedChapters() {
     setShowDetailsModal(true)
   }
 
+  const openContentModal = (chapter) => {
+    setSelectedChapter(chapter)
+    setContentForm({
+      content: chapter.content || '',
+      notes: chapter.notes || '',
+      changes: ''
+    })
+    setShowContentModal(true)
+  }
+
   const getStatusColor = (status) => {
     const colors = {
       in_progress: 'bg-blue-100 text-blue-800',
-      revision: 'bg-yellow-100 text-yellow-800'
+      revision: 'bg-yellow-100 text-yellow-800',
+      completed: 'bg-green-100 text-green-800',
+      approved: 'bg-purple-100 text-purple-800'
     }
     return colors[status] || 'bg-gray-100 text-gray-800'
   }
@@ -157,10 +189,22 @@ export default function WriterAcceptedChapters() {
     return diffDays
   }
 
+  const getTimeWorked = (assignedAt) => {
+    if (!assignedAt) return 'Unknown'
+    const now = new Date()
+    const assigned = new Date(assignedAt)
+    const diffTime = now - assigned
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+    
+    if (diffDays === 0) return 'Started today'
+    if (diffDays === 1) return '1 day'
+    return `${diffDays} days`
+  }
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        <div className="max-w-7xl mx-auto">
+      <WriterDashboardLayout>
+        <div className="p-6">
           <div className="animate-pulse space-y-6">
             <div className="h-8 bg-gray-200 rounded w-1/3"></div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -175,7 +219,7 @@ export default function WriterAcceptedChapters() {
             </div>
           </div>
         </div>
-      </div>
+      </WriterDashboardLayout>
     )
   }
 
@@ -185,8 +229,9 @@ export default function WriterAcceptedChapters() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Accepted Chapters</h1>
-          <p className="text-gray-600 mt-1">Chapters you've accepted and are working on</p>
+          <p className="text-gray-600 mt-1">Chapters assigned to you through bidding or direct assignment</p>
         </div>
+
         {/* Alerts */}
         {error && (
           <Alert 
@@ -216,7 +261,7 @@ export default function WriterAcceptedChapters() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{statistics.inProgress || 0}</p>
+                <p className="text-2xl font-bold text-gray-900">{statistics.myInProgress || 0}</p>
                 <p className="text-gray-600 text-sm">In Progress</p>
               </div>
             </div>
@@ -230,7 +275,7 @@ export default function WriterAcceptedChapters() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{statistics.revision || 0}</p>
+                <p className="text-2xl font-bold text-gray-900">{statistics.myRevision || 0}</p>
                 <p className="text-gray-600 text-sm">Needs Revision</p>
               </div>
             </div>
@@ -245,10 +290,33 @@ export default function WriterAcceptedChapters() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{formatCurrency(statistics.totalEarnings || 0)}</p>
-                <p className="text-gray-600 text-sm">Potential Earnings</p>
+                <p className="text-2xl font-bold text-gray-900">{formatCurrency(statistics.myTotalEarnings || 0)}</p>
+                <p className="text-gray-600 text-sm">Total Earnings</p>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Filter */}
+        <div className="bg-white p-6 rounded-lg shadow-sm border mb-8">
+          <div className="flex flex-wrap gap-4 items-center">
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="all">All My Chapters</option>
+              <option value="in_progress">In Progress</option>
+              <option value="revision">Needs Revision</option>
+              <option value="completed">Completed</option>
+              <option value="approved">Approved</option>
+            </select>
+            <button
+              onClick={() => fetchAcceptedChapters()}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Refresh
+            </button>
           </div>
         </div>
 
@@ -291,8 +359,37 @@ export default function WriterAcceptedChapters() {
                         <p className="text-gray-900">{chapter.workType?.replace('_', ' ')}</p>
                       </div>
                       <div>
-                        <span className="font-medium text-gray-700">Earnings:</span>
+                        <span className="font-medium text-gray-700">Your Earnings:</span>
                         <p className="text-gray-900 font-semibold">{formatCurrency(chapter.earnings || 0)}</p>
+                      </div>
+                    </div>
+
+                    {/* Assignment Info */}
+                    <div className="bg-blue-50 p-4 rounded-lg mb-4">
+                      <h4 className="font-medium text-blue-900 mb-2">Assignment Details</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div>
+                          <span className="font-medium text-blue-700">Assigned:</span>
+                          <p className="text-blue-900">{getTimeWorked(chapter.assignedAt)} ago</p>
+                        </div>
+                        <div>
+                          <span className="font-medium text-blue-700">Deadline:</span>
+                          <p className="text-blue-900">
+                            {chapter.deadline ? new Date(chapter.deadline).toLocaleDateString() : 'Flexible'}
+                          </p>
+                        </div>
+                        {chapter.acceptedBidAmount && (
+                          <div>
+                            <span className="font-medium text-blue-700">Agreed Amount:</span>
+                            <p className="text-blue-900">{formatCurrency(chapter.acceptedBidAmount)}</p>
+                          </div>
+                        )}
+                        {chapter.expectedCompletionDays && (
+                          <div>
+                            <span className="font-medium text-blue-700">Expected Days:</span>
+                            <p className="text-blue-900">{chapter.expectedCompletionDays} days</p>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -344,31 +441,59 @@ export default function WriterAcceptedChapters() {
                         ></div>
                       </div>
                     </div>
+
+                    {/* Content Preview */}
+                    {chapter.content && (
+                      <div className="p-4 bg-gray-50 rounded-lg mb-4">
+                        <h4 className="font-medium text-gray-900 mb-2">Current Content Preview:</h4>
+                        <p className="text-sm text-gray-700 line-clamp-3">
+                          {chapter.content.substring(0, 200)}...
+                        </p>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="flex gap-2 ml-4">
+                  {/* Action Buttons */}
+                  <div className="flex flex-col gap-2 ml-4">
                     <button
                       onClick={() => openDetailsModal(chapter)}
-                      className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors"
+                      className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors text-sm"
                     >
                       View Details
                     </button>
                     
                     <button
-                      onClick={() => router.push(`/writer/dashboard/currentchapters`)}
-                      className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                      onClick={() => openContentModal(chapter)}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
                     >
-                      Work on Chapter
+                      Edit Content
                     </button>
                     
-                    {chapter.status === 'in_progress' && calculateProgress(chapter) > 80 && (
+                    {chapter.status === 'in_progress' && (
                       <button
-                        onClick={() => handleMarkComplete(chapter._id)}
+                        onClick={() => handleStatusChange(chapter._id, 'completed')}
                         disabled={updating}
-                        className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                        className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 text-sm"
                       >
                         Mark Complete
                       </button>
+                    )}
+
+                    {chapter.status === 'revision' && (
+                      <button
+                        onClick={() => handleStatusChange(chapter._id, 'in_progress')}
+                        disabled={updating}
+                        className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 text-sm"
+                      >
+                        Resume Work
+                      </button>
+                    )}
+
+                    {chapter.status === 'completed' && (
+                      <div className="text-center">
+                        <div className="text-xs text-green-600 mb-1">✓ Completed</div>
+                        <div className="text-xs text-gray-500">Awaiting review</div>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -397,7 +522,7 @@ export default function WriterAcceptedChapters() {
               </svg>
             </div>
             <h3 className="text-lg font-medium text-gray-900 mb-2">No accepted chapters</h3>
-            <p className="text-gray-500 mb-4">You haven't accepted any chapters yet.</p>
+            <p className="text-gray-500 mb-4">You don't have any chapters assigned to you yet.</p>
             <button
               onClick={() => router.push('/writer/dashboard/currentchapters')}
               className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
@@ -478,7 +603,7 @@ export default function WriterAcceptedChapters() {
                     <button
                       onClick={() => {
                         setShowDetailsModal(false)
-                        router.push('/writer/dashboard/currentchapters')
+                        openContentModal(selectedChapter)
                       }}
                       className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
                     >
@@ -486,6 +611,96 @@ export default function WriterAcceptedChapters() {
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Content Modal - Same as before but enhanced */}
+        {showContentModal && selectedChapter && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg max-w-4xl w-full max-h-screen overflow-y-auto">
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">
+                      Edit Content: {selectedChapter.title}
+                    </h2>
+                    <p className="text-sm text-gray-600">
+                      Progress: {selectedChapter.wordCount || 0} / {selectedChapter.targetWordCount} words
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowContentModal(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"/>
+                    </svg>
+                  </button>
+                </div>
+
+                <form onSubmit={handleContentSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Content
+                    </label>
+                    <textarea
+                      value={contentForm.content}
+                      onChange={(e) => setContentForm({...contentForm, content: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                      rows={20}
+                      placeholder="Write your chapter content here..."
+                    />
+                    <div className="flex justify-between text-sm text-gray-500 mt-1">
+                      <span>Words: {contentForm.content.split(/\s+/).filter(word => word.length > 0).length}</span>
+                      <span>Target: {selectedChapter.targetWordCount}</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Notes (for student)
+                    </label>
+                    <textarea
+                      value={contentForm.notes}
+                      onChange={(e) => setContentForm({...contentForm, notes: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                      rows={3}
+                      placeholder="Add any notes for the student..."
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Summary of Changes
+                    </label>
+                    <input
+                      type="text"
+                      value={contentForm.changes}
+                      onChange={(e) => setContentForm({...contentForm, changes: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Brief description of what you changed..."
+                    />
+                  </div>
+
+                  <div className="flex gap-4 pt-4">
+                    <button
+                      type="submit"
+                      disabled={updating}
+                      className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50"
+                    >
+                      {updating ? 'Saving...' : 'Save Content'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowContentModal(false)}
+                      className="flex-1 bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-semibold hover:bg-gray-200 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           </div>

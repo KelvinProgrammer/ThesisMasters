@@ -1,4 +1,4 @@
-// app/api/admin/chapters/route.js - Admin Chapters Management API
+// app/api/admin/chapters/route.js - Enhanced Admin API with bid management
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth/next'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
@@ -57,6 +57,15 @@ export async function GET(request) {
           deadline: { $lt: new Date() },
           status: { $in: ['draft', 'in_progress', 'revision'] }
         }
+      } else if (status === 'pending') {
+        // Show chapters with pending bids
+        query = {
+          bids: {
+            $elemMatch: {
+              status: 'pending'
+            }
+          }
+        }
       } else {
         query.status = status
       }
@@ -78,7 +87,7 @@ export async function GET(request) {
 
     const skip = (page - 1) * limit
 
-    // Get chapters with user and writer information
+    // Enhanced aggregation with bid information
     const chapters = await Chapter.aggregate([
       { $match: query },
       {
@@ -120,11 +129,50 @@ export async function GET(request) {
           ]
         }
       },
+      // Enhanced lookup for bids with writer information
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'bids.writerId',
+          foreignField: '_id',
+          as: 'bidWriters',
+          pipeline: [
+            { $project: { name: 1, email: 1, writerProfile: 1 } }
+          ]
+        }
+      },
       {
         $addFields: {
           user: { $arrayElemAt: ['$user', 0] },
           writer: { $arrayElemAt: ['$writer', 0] },
           payment: { $arrayElemAt: ['$payment', 0] },
+          
+          // Enhanced bids with writer information
+          bids: {
+            $map: {
+              input: { $ifNull: ['$bids', []] },
+              as: 'bid',
+              in: {
+                $mergeObjects: [
+                  '$$bid',
+                  {
+                    writer: {
+                      $arrayElemAt: [
+                        {
+                          $filter: {
+                            input: '$bidWriters',
+                            cond: { $eq: ['$$this._id', '$$bid.writerId'] }
+                          }
+                        },
+                        0
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          
           isOverdue: {
             $cond: {
               if: {
@@ -136,6 +184,21 @@ export async function GET(request) {
               then: true,
               else: false
             }
+          },
+          
+          // Count pending bids
+          pendingBidsCount: {
+            $size: {
+              $filter: {
+                input: { $ifNull: ['$bids', []] },
+                cond: { $eq: ['$$this.status', 'pending'] }
+              }
+            }
+          },
+          
+          // Count total bids
+          totalBidsCount: {
+            $size: { $ifNull: ['$bids', []] }
           }
         }
       },
@@ -152,13 +215,14 @@ export async function GET(request) {
     const totalResult = await Chapter.aggregate(totalCountPipeline)
     const total = totalResult[0]?.total || 0
 
-    // Get statistics
+    // Enhanced statistics with bid information
     const stats = await Chapter.aggregate([
       {
         $group: {
           _id: null,
           total: { $sum: 1 },
           draft: { $sum: { $cond: [{ $eq: ['$status', 'draft'] }, 1, 0] } },
+          pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
           inProgress: { $sum: { $cond: [{ $eq: ['$status', 'in_progress'] }, 1, 0] } },
           completed: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
           revision: { $sum: { $cond: [{ $eq: ['$status', 'revision'] }, 1, 0] } },
@@ -181,7 +245,49 @@ export async function GET(request) {
           },
           totalRevenue: { $sum: '$estimatedCost' },
           averageWordCount: { $avg: '$wordCount' },
-          averageEstimatedCost: { $avg: '$estimatedCost' }
+          averageEstimatedCost: { $avg: '$estimatedCost' },
+          
+          // Bid statistics
+          chaptersWithBids: {
+            $sum: {
+              $cond: [
+                { $gt: [{ $size: { $ifNull: ['$bids', []] } }, 0] },
+                1,
+                0
+              ]
+            }
+          },
+          totalBids: { $sum: { $size: { $ifNull: ['$bids', []] } } },
+          pendingBids: {
+            $sum: {
+              $size: {
+                $filter: {
+                  input: { $ifNull: ['$bids', []] },
+                  cond: { $eq: ['$$this.status', 'pending'] }
+                }
+              }
+            }
+          },
+          acceptedBids: {
+            $sum: {
+              $size: {
+                $filter: {
+                  input: { $ifNull: ['$bids', []] },
+                  cond: { $eq: ['$$this.status', 'accepted'] }
+                }
+              }
+            }
+          },
+          rejectedBids: {
+            $sum: {
+              $size: {
+                $filter: {
+                  input: { $ifNull: ['$bids', []] },
+                  cond: { $eq: ['$$this.status', 'rejected'] }
+                }
+              }
+            }
+          }
         }
       }
     ])
@@ -189,6 +295,7 @@ export async function GET(request) {
     const statistics = stats[0] || {
       total: 0,
       draft: 0,
+      pending: 0,
       inProgress: 0,
       completed: 0,
       revision: 0,
@@ -198,7 +305,12 @@ export async function GET(request) {
       overdue: 0,
       totalRevenue: 0,
       averageWordCount: 0,
-      averageEstimatedCost: 0
+      averageEstimatedCost: 0,
+      chaptersWithBids: 0,
+      totalBids: 0,
+      pendingBids: 0,
+      acceptedBids: 0,
+      rejectedBids: 0
     }
 
     return NextResponse.json({
@@ -221,7 +333,7 @@ export async function GET(request) {
   }
 }
 
-// UPDATE chapter (assign writer, change status, etc.)
+// Enhanced UPDATE chapter with bid management
 export async function PUT(request) {
   try {
     const session = await getServerSession(authOptions)
@@ -257,14 +369,94 @@ export async function PUT(request) {
     let message = ''
 
     switch (action) {
+      case 'manage_bid':
+        // NEW: Admin manages writer bids (accept/reject)
+        const { bidId, bidAction } = data
+        
+        if (!bidId || !bidAction) {
+          return NextResponse.json({ 
+            message: 'Bid ID and bid action are required' 
+          }, { status: 400 })
+        }
+
+        if (!['accept', 'reject'].includes(bidAction)) {
+          return NextResponse.json({ 
+            message: 'Invalid bid action. Must be accept or reject' 
+          }, { status: 400 })
+        }
+
+        const bidIndex = chapter.bids.findIndex(bid => bid._id.toString() === bidId)
+        if (bidIndex === -1) {
+          return NextResponse.json({ 
+            message: 'Bid not found' 
+          }, { status: 404 })
+        }
+
+        const bid = chapter.bids[bidIndex]
+        if (bid.status !== 'pending') {
+          return NextResponse.json({ 
+            message: 'Bid is not pending' 
+          }, { status: 400 })
+        }
+
+        if (bidAction === 'accept') {
+          // Accept the bid and assign writer
+          updateData = {
+            writerId: bid.writerId,
+            status: 'in_progress',
+            assignedAt: new Date(),
+            acceptedBidAmount: bid.bidAmount,
+            expectedCompletionDays: bid.estimatedDays
+          }
+
+          // Update the accepted bid status
+          chapter.bids[bidIndex].status = 'accepted'
+          chapter.bids[bidIndex].acceptedAt = new Date()
+          chapter.bids[bidIndex].acceptedBy = session.user.id
+
+          // Reject all other pending bids for this chapter
+          chapter.bids.forEach((otherBid, index) => {
+            if (index !== bidIndex && otherBid.status === 'pending') {
+              otherBid.status = 'rejected'
+              otherBid.rejectedAt = new Date()
+              otherBid.rejectedBy = session.user.id
+              otherBid.rejectionReason = 'Another bid was accepted'
+            }
+          })
+
+          updateData.bids = chapter.bids
+          message = 'Bid accepted and writer assigned successfully'
+
+          // Update writer stats
+          await User.findByIdAndUpdate(
+            bid.writerId,
+            { 
+              $inc: { 
+                'writerProfile.assignedProjects': 1 
+              }
+            }
+          )
+
+        } else if (bidAction === 'reject') {
+          // Reject the bid
+          chapter.bids[bidIndex].status = 'rejected'
+          chapter.bids[bidIndex].rejectedAt = new Date()
+          chapter.bids[bidIndex].rejectedBy = session.user.id
+          chapter.bids[bidIndex].rejectionReason = data.reason || 'Bid rejected by admin'
+
+          updateData.bids = chapter.bids
+          message = 'Bid rejected successfully'
+        }
+        break
+
       case 'assign_writer':
+        // Direct assignment (existing functionality)
         if (!data.writerId || !mongoose.Types.ObjectId.isValid(data.writerId)) {
           return NextResponse.json({ 
             message: 'Valid writer ID is required' 
           }, { status: 400 })
         }
 
-        // Verify writer exists and is verified
         const writer = await User.findOne({ 
           _id: data.writerId, 
           role: 'writer',
@@ -282,11 +474,25 @@ export async function PUT(request) {
         if (chapter.status === 'draft') {
           updateData.status = 'in_progress'
         }
+
+        // Reject all pending bids since admin assigned directly
+        if (chapter.bids && chapter.bids.length > 0) {
+          chapter.bids.forEach(bid => {
+            if (bid.status === 'pending') {
+              bid.status = 'rejected'
+              bid.rejectedAt = new Date()
+              bid.rejectedBy = session.user.id
+              bid.rejectionReason = 'Admin assigned writer directly'
+            }
+          })
+          updateData.bids = chapter.bids
+        }
+
         message = 'Writer assigned successfully'
         break
 
       case 'change_status':
-        const allowedStatuses = ['draft', 'in_progress', 'completed', 'revision', 'approved']
+        const allowedStatuses = ['draft', 'pending', 'in_progress', 'completed', 'revision', 'approved']
         if (!data.status || !allowedStatuses.includes(data.status)) {
           return NextResponse.json({ 
             message: 'Valid status is required' 
@@ -361,6 +567,10 @@ export async function PUT(request) {
       {
         path: 'paymentId',
         select: 'status amount currency'
+      },
+      {
+        path: 'bids.writerId',
+        select: 'name email writerProfile'
       }
     ])
 
@@ -385,7 +595,7 @@ export async function PUT(request) {
   }
 }
 
-// DELETE chapter (admin only)
+// Enhanced DELETE chapter (admin only)
 export async function DELETE(request) {
   try {
     const session = await getServerSession(authOptions)
@@ -415,6 +625,14 @@ export async function DELETE(request) {
     if (chapter.isPaid || chapter.status === 'completed') {
       return NextResponse.json({ 
         message: 'Cannot delete paid or completed chapters' 
+      }, { status: 400 })
+    }
+
+    // Check if there are pending bids
+    const hasPendingBids = chapter.bids?.some(bid => bid.status === 'pending')
+    if (hasPendingBids) {
+      return NextResponse.json({ 
+        message: 'Cannot delete chapter with pending bids. Please reject all bids first.' 
       }, { status: 400 })
     }
 

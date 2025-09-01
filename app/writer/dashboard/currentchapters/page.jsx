@@ -1,4 +1,4 @@
-// app/writer/dashboard/currentchapters/page.jsx - Writer Current Chapters
+// app/writer/dashboard/currentchapters/page.jsx - Enhanced with bidding system
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -17,9 +17,11 @@ export default function WriterCurrentChapters() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [filterStatus, setFilterStatus] = useState('current')
+  const [filterStatus, setFilterStatus] = useState('available')
   const [selectedChapter, setSelectedChapter] = useState(null)
+  const [showBidModal, setShowBidModal] = useState(false)
   const [showContentModal, setShowContentModal] = useState(false)
+  const [bidForm, setBidForm] = useState({ bidAmount: '', bidMessage: '', estimatedDays: '' })
   const [contentForm, setContentForm] = useState({ content: '', notes: '', changes: '' })
   const [updating, setUpdating] = useState(false)
 
@@ -39,6 +41,7 @@ export default function WriterCurrentChapters() {
 
   const fetchChapters = async () => {
     try {
+      setLoading(true)
       const params = new URLSearchParams({
         status: filterStatus,
         limit: '50',
@@ -59,6 +62,38 @@ export default function WriterCurrentChapters() {
       setError(err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleSubmitBid = async (e) => {
+    e.preventDefault()
+    try {
+      setUpdating(true)
+      const response = await fetch('/api/writer/chapters', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chapterId: selectedChapter._id,
+          action: 'submit_bid',
+          data: {
+            bidAmount: parseFloat(bidForm.bidAmount),
+            bidMessage: bidForm.bidMessage,
+            estimatedDays: parseInt(bidForm.estimatedDays)
+          }
+        })
+      })
+
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.message)
+
+      setSuccess('Bid submitted successfully! Wait for admin approval.')
+      setShowBidModal(false)
+      setBidForm({ bidAmount: '', bidMessage: '', estimatedDays: '' })
+      fetchChapters()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setUpdating(false)
     }
   }
 
@@ -139,6 +174,16 @@ export default function WriterCurrentChapters() {
     }
   }
 
+  const openBidModal = (chapter) => {
+    setSelectedChapter(chapter)
+    setBidForm({
+      bidAmount: (chapter.estimatedCost * 0.7).toString(), // Suggest 70% of chapter cost
+      bidMessage: '',
+      estimatedDays: Math.ceil((chapter.targetWordCount || 2000) / 500).toString() // Estimate based on word count
+    })
+    setShowBidModal(true)
+  }
+
   const openContentModal = (chapter) => {
     setSelectedChapter(chapter)
     setContentForm({
@@ -152,9 +197,19 @@ export default function WriterCurrentChapters() {
   const getStatusColor = (status) => {
     const colors = {
       draft: 'bg-gray-100 text-gray-800',
+      pending: 'bg-yellow-100 text-yellow-800',
       in_progress: 'bg-blue-100 text-blue-800',
       completed: 'bg-green-100 text-green-800',
       revision: 'bg-yellow-100 text-yellow-800'
+    }
+    return colors[status] || 'bg-gray-100 text-gray-800'
+  }
+
+  const getBidStatusColor = (status) => {
+    const colors = {
+      pending: 'bg-yellow-100 text-yellow-800',
+      accepted: 'bg-green-100 text-green-800',
+      rejected: 'bg-red-100 text-red-800'
     }
     return colors[status] || 'bg-gray-100 text-gray-800'
   }
@@ -166,10 +221,22 @@ export default function WriterCurrentChapters() {
     }).format(amount)
   }
 
+  const hasActiveBid = (chapter) => {
+    return chapter.bids?.some(bid => 
+      bid.writerId.toString() === session?.user?.id && bid.status === 'pending'
+    )
+  }
+
+  const getMyBid = (chapter) => {
+    return chapter.bids?.find(bid => 
+      bid.writerId.toString() === session?.user?.id
+    )
+  }
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        <div className="max-w-7xl mx-auto">
+      <WriterDashboardLayout>
+        <div className="p-6">
           <div className="animate-pulse space-y-6">
             <div className="h-8 bg-gray-200 rounded w-1/3"></div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -184,7 +251,7 @@ export default function WriterCurrentChapters() {
             </div>
           </div>
         </div>
-      </div>
+      </WriterDashboardLayout>
     )
   }
 
@@ -194,8 +261,9 @@ export default function WriterCurrentChapters() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Current Chapters</h1>
-          <p className="text-gray-600 mt-1">Manage your writing assignments</p>
+          <p className="text-gray-600 mt-1">Bid on available projects and manage your assignments</p>
         </div>
+
         {/* Alerts */}
         {error && (
           <Alert 
@@ -225,8 +293,8 @@ export default function WriterCurrentChapters() {
                 </svg>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{statistics.total || 0}</p>
-                <p className="text-gray-600 text-sm">Total Projects</p>
+                <p className="text-2xl font-bold text-gray-900">{statistics.availableChapters || 0}</p>
+                <p className="text-gray-600 text-sm">Available Projects</p>
               </div>
             </div>
           </div>
@@ -283,120 +351,174 @@ export default function WriterCurrentChapters() {
               onChange={(e) => setFilterStatus(e.target.value)}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
             >
-              <option value="current">Current Projects</option>
-              <option value="available">Available Projects</option>
+              <option value="available">Available for Bidding</option>
+              <option value="accepted">My Accepted Projects</option>
               <option value="in_progress">In Progress</option>
               <option value="revision">Needs Revision</option>
               <option value="completed">Completed</option>
+              <option value="all">All Projects</option>
             </select>
+            <button
+              onClick={() => fetchChapters()}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Refresh
+            </button>
           </div>
         </div>
 
         {/* Chapters List */}
         {chapters.length > 0 ? (
           <div className="space-y-6">
-            {chapters.map((chapter) => (
-              <div key={chapter._id} className="bg-white p-6 rounded-lg shadow-sm border">
-                <div className="flex justify-between items-start mb-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="text-xl font-semibold text-gray-900">
-                        Chapter {chapter.chapterNumber}: {chapter.title}
-                      </h3>
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(chapter.status)}`}>
-                        {chapter.status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                      </span>
-                    </div>
-                    
-                    {chapter.summary && (
-                      <p className="text-gray-600 mb-3">{chapter.summary}</p>
-                    )}
+            {chapters.map((chapter) => {
+              const myBid = getMyBid(chapter)
+              const isAssignedToMe = chapter.writerId?.toString() === session?.user?.id
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-500">
-                      <div>
-                        <span className="font-medium">Student:</span> {chapter.user?.name}
+              return (
+                <div key={chapter._id} className="bg-white p-6 rounded-lg shadow-sm border">
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <h3 className="text-xl font-semibold text-gray-900">
+                          Chapter {chapter.chapterNumber}: {chapter.title}
+                        </h3>
+                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(chapter.status)}`}>
+                          {chapter.status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                        </span>
+                        {myBid && (
+                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${getBidStatusColor(myBid.status)}`}>
+                            Bid: {myBid.status}
+                          </span>
+                        )}
                       </div>
-                      <div>
-                        <span className="font-medium">Words:</span> {chapter.wordCount || 0} / {chapter.targetWordCount}
-                      </div>
-                      <div>
-                        <span className="font-medium">Earnings:</span> {formatCurrency(chapter.earnings || 0)}
-                      </div>
-                      <div>
-                        <span className="font-medium">Deadline:</span> {chapter.deadline ? new Date(chapter.deadline).toLocaleDateString() : 'No deadline'}
-                      </div>
-                    </div>
-                  </div>
+                      
+                      {chapter.summary && (
+                        <p className="text-gray-600 mb-3">{chapter.summary}</p>
+                      )}
 
-                  <div className="flex gap-2 ml-4">
-                    {filterStatus === 'available' && !chapter.writerId ? (
-                      <button
-                        onClick={() => handleAcceptChapter(chapter._id)}
-                        disabled={updating}
-                        className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
-                      >
-                        Accept Project
-                      </button>
-                    ) : (
-                      <>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-500 mb-4">
+                        <div>
+                          <span className="font-medium">Student:</span> {chapter.user?.name}
+                        </div>
+                        <div>
+                          <span className="font-medium">Words:</span> {chapter.wordCount || 0} / {chapter.targetWordCount}
+                        </div>
+                        <div>
+                          <span className="font-medium">Budget:</span> {formatCurrency(chapter.estimatedCost || 0)}
+                        </div>
+                        <div>
+                          <span className="font-medium">Deadline:</span> {chapter.deadline ? new Date(chapter.deadline).toLocaleDateString() : 'Flexible'}
+                        </div>
+                      </div>
+
+                      {/* My Bid Display */}
+                      {myBid && (
+                        <div className="bg-blue-50 p-4 rounded-lg mb-4">
+                          <h4 className="font-medium text-blue-900 mb-2">Your Bid</h4>
+                          <div className="grid grid-cols-3 gap-4 text-sm">
+                            <div>
+                              <span className="font-medium text-blue-700">Amount:</span>
+                              <p className="text-blue-900">{formatCurrency(myBid.bidAmount)}</p>
+                            </div>
+                            <div>
+                              <span className="font-medium text-blue-700">Estimated Days:</span>
+                              <p className="text-blue-900">{myBid.estimatedDays} days</p>
+                            </div>
+                            <div>
+                              <span className="font-medium text-blue-700">Status:</span>
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getBidStatusColor(myBid.status)}`}>
+                                {myBid.status}
+                              </span>
+                            </div>
+                          </div>
+                          {myBid.bidMessage && (
+                            <div className="mt-2">
+                              <span className="font-medium text-blue-700">Message:</span>
+                              <p className="text-blue-900 text-sm">{myBid.bidMessage}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Total Bids Info */}
+                      {chapter.bids && chapter.bids.length > 0 && (
+                        <div className="text-sm text-gray-500 mb-4">
+                          📊 {chapter.bids.length} bid(s) submitted
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex gap-2 ml-4">
+                      {/* Available chapters - allow bidding */}
+                      {filterStatus === 'available' && !isAssignedToMe && !hasActiveBid(chapter) && (
                         <button
-                          onClick={() => openContentModal(chapter)}
-                          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                          onClick={() => openBidModal(chapter)}
+                          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
                         >
-                          Edit Content
+                          Submit Bid
                         </button>
-                        
-                        {chapter.status === 'in_progress' && (
+                      )}
+
+                      {/* Show bid status for chapters I've bid on */}
+                      {hasActiveBid(chapter) && !isAssignedToMe && (
+                        <div className="text-center">
+                          <p className="text-sm text-gray-600 mb-1">Bid Submitted</p>
+                          <p className="text-xs text-yellow-600">Awaiting approval</p>
+                        </div>
+                      )}
+
+                      {/* Assigned chapters - show work options */}
+                      {isAssignedToMe && (
+                        <>
                           <button
-                            onClick={() => handleStatusChange(chapter._id, 'completed')}
-                            disabled={updating}
-                            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                            onClick={() => openContentModal(chapter)}
+                            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
                           >
-                            Mark Complete
+                            Edit Content
                           </button>
-                        )}
-                        
-                        {chapter.status === 'completed' && (
-                          <button
-                            onClick={() => handleStatusChange(chapter._id, 'revision')}
-                            disabled={updating}
-                            className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors disabled:opacity-50"
-                          >
-                            Request Revision
-                          </button>
-                        )}
-                      </>
-                    )}
+                          
+                          {chapter.status === 'in_progress' && (
+                            <button
+                              onClick={() => handleStatusChange(chapter._id, 'completed')}
+                              disabled={updating}
+                              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                            >
+                              Mark Complete
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Progress Bar for assigned chapters */}
+                  {isAssignedToMe && chapter.targetWordCount > 0 && (
+                    <div className="mt-4">
+                      <div className="flex justify-between text-sm text-gray-600 mb-1">
+                        <span>Writing Progress</span>
+                        <span>{Math.round(((chapter.wordCount || 0) / chapter.targetWordCount) * 100)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${Math.min(((chapter.wordCount || 0) / chapter.targetWordCount) * 100, 100)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Content Preview for assigned chapters */}
+                  {isAssignedToMe && chapter.content && (
+                    <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                      <h4 className="font-medium text-gray-900 mb-2">Content Preview:</h4>
+                      <p className="text-sm text-gray-700 line-clamp-3">
+                        {chapter.content.substring(0, 200)}...
+                      </p>
+                    </div>
+                  )}
                 </div>
-
-                {/* Progress Bar */}
-                {chapter.targetWordCount > 0 && (
-                  <div className="mt-4">
-                    <div className="flex justify-between text-sm text-gray-600 mb-1">
-                      <span>Writing Progress</span>
-                      <span>{Math.round(((chapter.wordCount || 0) / chapter.targetWordCount) * 100)}%</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${Math.min(((chapter.wordCount || 0) / chapter.targetWordCount) * 100, 100)}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Content Preview */}
-                {chapter.content && (
-                  <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                    <h4 className="font-medium text-gray-900 mb-2">Content Preview:</h4>
-                    <p className="text-sm text-gray-700 line-clamp-3">
-                      {chapter.content.substring(0, 200)}...
-                    </p>
-                  </div>
-                )}
-              </div>
-            ))}
+              )
+            })}
           </div>
         ) : (
           <div className="bg-white rounded-lg shadow-sm p-12 text-center">
@@ -417,7 +539,104 @@ export default function WriterCurrentChapters() {
           </div>
         )}
 
-        {/* Content Modal */}
+        {/* Bid Modal */}
+        {showBidModal && selectedChapter && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg max-w-lg w-full">
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-bold text-gray-900">Submit Bid</h2>
+                  <button
+                    onClick={() => setShowBidModal(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"/>
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+                  <h3 className="font-semibold text-gray-900">
+                    {selectedChapter.title}
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    {selectedChapter.targetWordCount} words • Budget: {formatCurrency(selectedChapter.estimatedCost)}
+                  </p>
+                </div>
+
+                <form onSubmit={handleSubmitBid} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Your Bid Amount (KES)
+                    </label>
+                    <input
+                      type="number"
+                      value={bidForm.bidAmount}
+                      onChange={(e) => setBidForm({...bidForm, bidAmount: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Enter your bid amount"
+                      required
+                      min="1"
+                      step="0.01"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Suggested: {formatCurrency(selectedChapter.estimatedCost * 0.7)} (70% of budget)
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Estimated Completion Time (Days)
+                    </label>
+                    <input
+                      type="number"
+                      value={bidForm.estimatedDays}
+                      onChange={(e) => setBidForm({...bidForm, estimatedDays: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Number of days"
+                      required
+                      min="1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Proposal Message
+                    </label>
+                    <textarea
+                      value={bidForm.bidMessage}
+                      onChange={(e) => setBidForm({...bidForm, bidMessage: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                      rows={4}
+                      placeholder="Explain why you're the best choice for this project..."
+                      required
+                    />
+                  </div>
+
+                  <div className="flex gap-4 pt-4">
+                    <button
+                      type="submit"
+                      disabled={updating}
+                      className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50"
+                    >
+                      {updating ? 'Submitting...' : 'Submit Bid'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowBidModal(false)}
+                      className="flex-1 bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-semibold hover:bg-gray-200 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Content Modal (same as before) */}
         {showContentModal && selectedChapter && (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-lg max-w-4xl w-full max-h-screen overflow-y-auto">
