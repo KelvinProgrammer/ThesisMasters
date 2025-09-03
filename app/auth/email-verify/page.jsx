@@ -1,11 +1,12 @@
 // app/auth/email-verify/page.jsx 
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
-export default function EmailVerifyPage() {
+// Create a separate component for the verification logic
+function EmailVerificationContent() {
   const [loading, setLoading] = useState(true)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
@@ -132,5 +133,27 @@ export default function EmailVerifyPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+// Loading fallback component
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 flex items-center justify-center p-4">
+      <div className="text-center">
+        <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">Loading...</h1>
+        <p className="text-gray-600">Please wait while we load the verification page.</p>
+      </div>
+    </div>
+  )
+}
+
+// Main page component with Suspense boundary
+export default function EmailVerifyPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <EmailVerificationContent />
+    </Suspense>
   )
 }
