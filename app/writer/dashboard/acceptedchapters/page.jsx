@@ -1,4 +1,4 @@
-// app/writer/dashboard/acceptedchapters/page.jsx - Enhanced Writer Accepted Chapters
+// app/writer/dashboard/acceptedchapters/page.jsx 
 'use client'
 
 import { useState, useEffect } from 'react'
